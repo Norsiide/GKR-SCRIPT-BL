@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         GKR - Vérificateur de codes sur GKR Products
 // @namespace    http://tampermonkey.net/
-// @version      2.8
-// @description  Lit les codes sur app.gkr.be, vérifie sur gkr.norsiide.be/products et recharge l'onglet Norsiide sans jamais bloquer la navigation de l'utilisateur
+// @version      3.7
+// @description  Lit les codes sur app.gkr.be, vérifie sur gkr.norsiide.be/products avec détection temps réel infaillible de l'onglet ouvert (gestion anti-veille Chrome) et statut de connexion
 // @author       norsiide
 // @match        *://app.gkr.be/*
 // @match        *://*.gkr.be/*
@@ -24,34 +24,95 @@
     'use strict';
 
     const GKR_PRODUCTS_URL = 'https://gkr.norsiide.be/products';
+    const GKR_LOGIN_URL = 'https://gkr.norsiide.be/login';
+    const APP_GKR_LOGIN_URL = 'https://app.gkr.be/auth/supabase/sign-in';
 
     // =========================================================================
     //  0. GESTION DU SITE NORSIIDE (gkr.norsiide.be)
     // =========================================================================
     if (window.location.host.includes('gkr.norsiide.be')) {
-        const setNorsiideActive = () => {
+
+        // Vérification de l'onglet app.gkr.be (avec gestion anti-veille Chrome)
+        function isAppGkrTabOpen() {
+            let isOpened = GM_getValue('app_gkr_tab_opened', false);
+            let lastActiveTs = GM_getValue('app_gkr_active_ts', 0);
+            // L'onglet est ouvert si le flag est actif et que le dernier signal date de moins de 5 minutes
+            return isOpened && (Date.now() - lastActiveTs < 300000);
+        }
+
+        // Vérification du compte connecté
+        function isAppGkrLoggedIn() {
+            let auth = GM_getValue('gkr_user_auth_status', null);
+            if (auth && auth.loggedIn && (Date.now() - auth.timestamp < 3600000 * 12)) {
+                return true;
+            }
+            return false;
+        }
+
+        // Mise à jour de l'affichage du badge de statut
+        function updateAppGkrAuthBadge() {
             GM_setValue('norsiide_tab_opened', true);
             GM_setValue('norsiide_tab_active_ts', Date.now());
-        };
 
-        setNorsiideActive();
-        setInterval(setNorsiideActive, 1000);
+            let badge = document.getElementById('norsiide-gkr-sync-badge');
+            if (!badge) {
+                badge = document.createElement('a');
+                badge.id = 'norsiide-gkr-sync-badge';
+                badge.target = '_blank';
+                badge.style.cssText = 'position: fixed; bottom: 54px; right: 10px; z-index: 99999; padding: 10px 16px; border-radius: 20px; font-size: 14px; font-weight: bold; box-shadow: rgba(0, 0, 0, 0.25) 0px 2px 8px; font-family: sans-serif; text-decoration: none; cursor: pointer; opacity: 0.95; transition: transform 0.2s, background 0.3s;';
+                badge.onmouseover = () => badge.style.transform = 'scale(1.03)';
+                badge.onmouseout = () => badge.style.transform = 'scale(1)';
+                document.body.appendChild(badge);
+            }
 
-        window.addEventListener('focus', setNorsiideActive);
-        window.addEventListener('click', setNorsiideActive);
-        window.addEventListener('visibilitychange', () => {
-            if (!document.hidden) setNorsiideActive();
-        });
+            let tabOpen = isAppGkrTabOpen();
+            let loggedIn = isAppGkrLoggedIn();
+
+            if (loggedIn && tabOpen) {
+                // 🟢 CAS 1 : Compte connecté ET Onglet ouvert
+                badge.innerHTML = '🟢 Connecté à APP.GKR.BE (Onglet actif)';
+                badge.style.background = 'rgb(40, 167, 69)';
+                badge.style.color = 'white';
+                badge.href = 'https://app.gkr.be/new-dashboard/new-order';
+                badge.title = 'Votre compte est connecté et l\'onglet app.gkr.be est ouvert.';
+            } else if (loggedIn && !tabOpen) {
+                // 🟡 CAS 2 : Compte connecté MAIS Onglet fermé
+                badge.innerHTML = '🟡 APP.GKR.BE (Onglet fermé - Ouvrir ↗)';
+                badge.style.background = 'rgb(253, 126, 20)';
+                badge.style.color = 'white';
+                badge.href = 'https://app.gkr.be/new-dashboard/new-order';
+                badge.title = 'Votre compte est connecté mais l\'onglet app.gkr.be est fermé. Cliquez pour l\'ouvrir.';
+            } else {
+                // 🔴 CAS 3 : Compte déconnecté
+                badge.innerHTML = '🔴 Compte déconnecté (Se connecter ↗)';
+                badge.style.background = 'rgb(220, 53, 69)';
+                badge.style.color = 'white';
+                badge.href = APP_GKR_LOGIN_URL;
+                badge.title = 'Votre compte app.gkr.be est déconnecté. Cliquez pour vous identifier.';
+            }
+        }
+
+        updateAppGkrAuthBadge();
+        setInterval(updateAppGkrAuthBadge, 1000);
+
+        // Écouteur en temps réel des changements d'état
+        if (typeof GM_addValueChangeListener === 'function') {
+            GM_addValueChangeListener('app_gkr_tab_opened', updateAppGkrAuthBadge);
+            GM_addValueChangeListener('app_gkr_active_ts', updateAppGkrAuthBadge);
+            GM_addValueChangeListener('gkr_user_auth_status', updateAppGkrAuthBadge);
+        }
+
+        window.addEventListener('focus', updateAppGkrAuthBadge);
+        window.addEventListener('click', updateAppGkrAuthBadge);
 
         window.addEventListener('beforeunload', () => {
             GM_setValue('norsiide_tab_active_ts', Date.now() - 3600000);
         });
 
-        // Exécuter l'ordre de redirection UNE SEULE FOIS (sans jamais boucler ni bloquer la navigation)
+        // Exécuter l'ordre de redirection UNE SEULE FOIS
         const checkAndExecuteNavigation = () => {
             let target = GM_getValue('norsiide_navigate_target', null);
             if (target && target.url && !target.consumed && (Date.now() - target.timestamp < 6000)) {
-                // Marquer immédiatement la commande comme consommée pour libérer la navigation de l'utilisateur
                 target.consumed = true;
                 GM_setValue('norsiide_navigate_target', target);
 
@@ -62,7 +123,6 @@
             }
         };
 
-        // Écouteur Tampermonkey temps réel
         if (typeof GM_addValueChangeListener === 'function') {
             GM_addValueChangeListener('norsiide_navigate_target', function (key, oldVal, newVal, remote) {
                 if (newVal && newVal.url && !newVal.consumed) {
@@ -71,24 +131,50 @@
             });
         }
 
-        // Polling léger toutes les 500ms
         setInterval(checkAndExecuteNavigation, 500);
-
-        // Indicateur visuel discret
-        if (!document.getElementById('norsiide-gkr-sync-badge')) {
-            let badge = document.createElement('div');
-            badge.id = 'norsiide-gkr-sync-badge';
-            badge.innerHTML = '🟢 Connecté à APP.GKR.BE';
-            badge.title = 'Cet onglet est prêt à recevoir les requêtes sans bloquer votre navigation.';
-            badge.style.cssText = 'position: fixed;bottom: 54px;right: 10px;z-index: 99999;background: rgb(40, 167, 69);color: white;padding: 12px 10px;border-radius: 20px;font-size: 15px;font-weight: bold;box-shadow: rgba(0, 0, 0, 0.2) 0px 2px 6px;font-family: sans-serif;pointer-events: none;opacity: 0.85;';document.body.appendChild(badge);
-        }
 
         return; // Fin pour Norsiide
     }
 
     // =========================================================================
-    //  COTE GKR (app.gkr.be)
+    //  COTE GKR (app.gkr.be) : Synchronisation de Session & Signaux
     // =========================================================================
+
+    function markAppGkrActive() {
+        let path = window.location.pathname.toLowerCase();
+        let href = window.location.href.toLowerCase();
+
+        let isLoginPage = href.includes('/auth/supabase/sign-in') || path.includes('/auth') || path.includes('/sign-in') || path.includes('/login');
+
+        GM_setValue('app_gkr_tab_opened', true);
+        GM_setValue('app_gkr_active_ts', Date.now());
+
+        GM_setValue('gkr_user_auth_status', {
+            loggedIn: !isLoginPage,
+            timestamp: Date.now(),
+            lastUrl: window.location.href
+        });
+    }
+
+    markAppGkrActive();
+    setInterval(markAppGkrActive, 1000);
+
+    window.addEventListener('focus', markAppGkrActive);
+    window.addEventListener('click', markAppGkrActive);
+    window.addEventListener('mousemove', markAppGkrActive);
+    window.addEventListener('visibilitychange', () => {
+        if (!document.hidden) markAppGkrActive();
+    });
+
+    // Détection immédiate de fermeture de l'onglet
+    window.addEventListener('beforeunload', () => {
+        GM_setValue('app_gkr_tab_opened', false);
+        GM_setValue('app_gkr_active_ts', 0);
+    });
+    window.addEventListener('pagehide', () => {
+        GM_setValue('app_gkr_tab_opened', false);
+        GM_setValue('app_gkr_active_ts', 0);
+    });
 
     const sleep = ms => new Promise(res => setTimeout(res, ms));
 
@@ -97,12 +183,11 @@
         return String(code).replace(/[^a-z0-9]/gi, '').toLowerCase();
     }
 
-    // Mise à jour de l'onglet Norsiide sans ouvrir de nouvel onglet
+    // Redirection vers l'onglet Norsiide
     function redirectToNorsiide(targetUrl, badgeElement) {
         const lastActiveTs = GM_getValue('norsiide_tab_active_ts', 0);
         const isNorsiideOpen = (Date.now() - lastActiveTs) < 300000;
 
-        // Créer une commande fraîche à usage unique
         GM_setValue('norsiide_navigate_target', {
             url: targetUrl,
             timestamp: Date.now(),
@@ -200,7 +285,7 @@
     }
 
     // =========================================================================
-    //  2. REQUÊTE SUR https://gkr.norsiide.be/products & RÉCUPÉRATION DU LIEN DE L'ARTICLE
+    //  2. REQUÊTE SUR https://gkr.norsiide.be/products & DÉTECTION CONNEXION
     // =========================================================================
     function checkCodeOnGkrNorsiide(ref) {
         return new Promise((resolve) => {
@@ -213,6 +298,24 @@
                 withCredentials: true,
                 onload: function (response) {
                     try {
+                        let finalUrl = (response.finalUrl || '').toLowerCase();
+                        let isAuthRequired = false;
+
+                        if (finalUrl.includes('/login') || finalUrl.includes('/connexion') || response.status === 401 || response.status === 403) {
+                            isAuthRequired = true;
+                        }
+
+                        if (isAuthRequired) {
+                            resolve({
+                                reference: cleanRef,
+                                found: false,
+                                authRequired: true,
+                                productUrl: GKR_LOGIN_URL,
+                                status: response.status
+                            });
+                            return;
+                        }
+
                         let html = response.responseText;
                         let parser = new DOMParser();
                         let doc = parser.parseFromString(html, 'text/html');
@@ -261,15 +364,16 @@
                         resolve({
                             reference: cleanRef,
                             found: found,
+                            authRequired: false,
                             productUrl: productUrl,
                             status: response.status
                         });
                     } catch (e) {
-                        resolve({ reference: cleanRef, found: false, productUrl: searchUrl, error: e.message });
+                        resolve({ reference: cleanRef, found: false, authRequired: false, productUrl: searchUrl, error: e.message });
                     }
                 },
                 onerror: function (err) {
-                    resolve({ reference: cleanRef, found: false, productUrl: searchUrl, error: "Erreur de connexion" });
+                    resolve({ reference: cleanRef, found: false, authRequired: false, productUrl: searchUrl, error: "Erreur de connexion" });
                 }
             });
         });
@@ -278,7 +382,7 @@
     // =========================================================================
     //  3. INJECTION DU BADGE CLIQUABLE
     // =========================================================================
-    function setRowStatusBadge(rowElement, inputElement, found, productUrl, ref) {
+    function setRowStatusBadge(rowElement, inputElement, found, productUrl, ref, authRequired) {
         if (!rowElement) return;
 
         let existingBadge = rowElement.querySelector('.gkr-status-badge');
@@ -314,14 +418,21 @@
             badge.style.boxShadow = '0 1px 3px rgba(0,0,0,0.12)';
         };
 
-        // Au clic : mise à jour unique de l'onglet Norsiide sans le bloquer
+        // Au clic : redirection de l'onglet Norsiide
         badge.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
             redirectToNorsiide(targetUrl, badge);
         });
 
-        if (found) {
+        if (authRequired) {
+            badge.style.backgroundColor = '#fff3cd';
+            badge.style.color = '#856404';
+            badge.style.border = '1px solid #ffeeba';
+            badge.innerHTML = '🔒 Déconnecté de Norsiide (Se connecter ↗)';
+            badge.title = `Votre session sur gkr.norsiide.be a expiré. Cliquez pour vous connecter.`;
+            rowElement.style.backgroundColor = 'rgba(255, 193, 7, 0.08)';
+        } else if (found) {
             badge.style.backgroundColor = '#d4edda';
             badge.style.color = '#155724';
             badge.style.border = '1px solid #c3e6cb';
@@ -385,6 +496,7 @@
         }
 
         let foundCount = 0;
+        let authIssueDetected = false;
 
         for (let i = 0; i < items.length; i++) {
             let it = items[i];
@@ -394,17 +506,23 @@
 
             let checkRes = await checkCodeOnGkrNorsiide(it.reference);
 
-            if (checkRes.found) {
+            if (checkRes.authRequired) {
+                authIssueDetected = true;
+            } else if (checkRes.found) {
                 foundCount++;
             }
 
-            setRowStatusBadge(it.rowElement, it.inputElement, checkRes.found, checkRes.productUrl, it.reference);
+            setRowStatusBadge(it.rowElement, it.inputElement, checkRes.found, checkRes.productUrl, it.reference, checkRes.authRequired);
             await sleep(200);
         }
 
         if (btn) {
             btn.disabled = false;
-            btn.textContent = `✅ Vérifié (${foundCount}/${items.length} trouvés)`;
+            if (authIssueDetected) {
+                btn.textContent = `⚠️ Déconnecté de Norsiide`;
+            } else {
+                btn.textContent = `✅ Vérifié (${foundCount}/${items.length} trouvés)`;
+            }
             setTimeout(() => {
                 btn.textContent = '🔎 Checker sur ( gkr.norsiide.be )';
             }, 5000);
