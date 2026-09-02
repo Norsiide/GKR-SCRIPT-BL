@@ -2,7 +2,7 @@ test
 // ==UserScript==
 // @name         GKR - Vérificateur de codes sur GKR Products
 // @namespace    http://tampermonkey.net/
-// @version      3.7
+// @version      3.8
 // @description  Lit les codes sur app.gkr.be, vérifie sur gkr.norsiide.be/products avec détection temps réel infaillible de l'onglet ouvert (gestion anti-veille Chrome) et statut de connexion
 // @author       norsiide
 // @match        *://app.gkr.be/*
