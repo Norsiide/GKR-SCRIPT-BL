@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TopAutoPieces to GKR Cart Linker
 // @namespace    http://tampermonkey.net/
-// @version      4.0
+// @version      4.2
 // @description  Transfert automatique d'articles, références exactes (Code), désignations épurées "Marque - Nom de la pièce" et prix (HTVAC) depuis TopAutoPieces vers GKR
 // @author       Norsiide
 // @match        https://b2b.topautopieces.be/*
