@@ -1,11 +1,9 @@
 // ==UserScript==
-// @name         APCAT & TopAutoPieces to GKR Cart Linker
+// @name         TopAutoPieces to GKR Cart Linker
 // @namespace    http://tampermonkey.net/
 // @version      4.0
-// @description  Transfert automatique d'articles, références exactes (Code), désignations épurées "Marque - Nom de la pièce" (sans résidus descriptifs, côtés ou caractéristiques) et prix (HTVAC) vers GKR
+// @description  Transfert automatique d'articles, références exactes (Code), désignations épurées "Marque - Nom de la pièce" et prix (HTVAC) depuis TopAutoPieces vers GKR
 // @author       Norsiide
-// @match        https://apcat.eu/*
-// @match        https://*.carparts-cat.com/*
 // @match        https://b2b.topautopieces.be/*
 // @match        https://*.topautopieces.be/*
 // @match        https://toppiecesauto.be/*
@@ -21,6 +19,74 @@
 
     // Helper: Attente asynchrone
     const sleep = ms => new Promise(res => setTimeout(res, ms));
+
+    // Toaster notification moderne
+    function showToast(message, type = 'info', duration = 4500) {
+        let container = document.getElementById('gkr-toast-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'gkr-toast-container';
+            container.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 9999999; display: flex; flex-direction: column; gap: 10px; max-width: 420px; pointer-events: none; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;';
+            document.body.appendChild(container);
+        }
+
+        const toast = document.createElement('div');
+        toast.style.cssText = 'pointer-events: auto; display: flex; align-items: flex-start; gap: 12px; padding: 14px 18px; border-radius: 10px; color: #ffffff; font-size: 13.5px; line-height: 1.45; box-shadow: 0 8px 24px rgba(0,0,0,0.22); opacity: 0; transform: translateX(40px) scale(0.95); transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); backdrop-filter: blur(8px); word-break: break-word; white-space: pre-line;';
+
+        let bg = '#333333';
+        let icon = 'ℹ️';
+        if (type === 'success') {
+            bg = 'linear-gradient(135deg, #1e7e34, #28a745)';
+            icon = '✅';
+        } else if (type === 'error') {
+            bg = 'linear-gradient(135deg, #bd2130, #dc3545)';
+            icon = '❌';
+        } else if (type === 'warning') {
+            bg = 'linear-gradient(135deg, #d39e00, #ffc107)';
+            toast.style.color = '#212529';
+            icon = '⚠️';
+        } else {
+            bg = 'linear-gradient(135deg, #0056b3, #007bff)';
+            icon = 'ℹ️';
+        }
+        toast.style.background = bg;
+
+        const iconSpan = document.createElement('span');
+        iconSpan.style.cssText = 'font-size: 18px; line-height: 1; flex-shrink: 0;';
+        iconSpan.textContent = icon;
+
+        const msgSpan = document.createElement('div');
+        msgSpan.style.cssText = 'flex-grow: 1; font-weight: 500;';
+        msgSpan.textContent = message;
+
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = '✕';
+        closeBtn.style.cssText = 'background: transparent; border: none; color: inherit; font-size: 14px; cursor: pointer; opacity: 0.7; padding: 0 0 0 8px; line-height: 1; transition: opacity 0.2s;';
+        closeBtn.onmouseover = () => closeBtn.style.opacity = '1';
+        closeBtn.onmouseout = () => closeBtn.style.opacity = '0.7';
+
+        const dismiss = () => {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateX(50px) scale(0.9)';
+            setTimeout(() => toast.remove(), 300);
+        };
+
+        closeBtn.onclick = dismiss;
+
+        toast.appendChild(iconSpan);
+        toast.appendChild(msgSpan);
+        toast.appendChild(closeBtn);
+        container.appendChild(toast);
+
+        requestAnimationFrame(() => {
+            toast.style.opacity = '1';
+            toast.style.transform = 'translateX(0) scale(1)';
+        });
+
+        if (duration > 0) {
+            setTimeout(dismiss, duration);
+        }
+    }
 
     // Helper: Normalisation de code/référence
     function normalizeCode(code) {
@@ -47,7 +113,7 @@
         return DESCRIPTIVE_WORDS.some(w => s === w || s.includes(w));
     }
 
-    // Helper: Nettoyage précis du nom de la pièce (suppression stricte des résidus descriptifs, côtés de montage, etc.)
+    // Helper: Nettoyage précis du nom de la pièce
     function cleanShortProductName(name, brand = '') {
         if (!name) return "";
         let clean = String(name).replace(/[\u00a0\u202F]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -67,7 +133,7 @@
         const KNOWN_BRANDS_REGEX = /\b(?:MEYLE|LEMA|MOOG|DT|AJUSA|FEBI|BILSTEIN|BOSCH|BREMBO|TRW|ATE|CORTECO|ELRING|SKF|FAG|INA|VALEO|RIDEX|STARK|SACHS|MONROE|LUK|CONTITECH|GATES|DAYCO|HENGST|MAHLE|MANN|PURFLUX|DELPHI|DENSO|NGK|BERU|TEXTAR|FERODO|ZIMMERMANN|KYB|KAYABA|LEMFORDER|LEMFÖRDER|SWAG|ORIGINAL|GERMANY|PREMIUM|PRO|MAX|PLUS)\b/gi;
         clean = clean.replace(KNOWN_BRANDS_REGEX, ' ').trim();
 
-        // 4. Supprimer les répétitions consécutives de mots (ex: "bush bush" -> "bush")
+        // 4. Supprimer les répétitions consécutives de mots
         clean = clean.replace(/\b([A-Za-z0-9_-]+)(?:\s+\1\b)+/gi, '$1');
 
         // 5. Couper aux séparateurs majeurs de sections
@@ -82,23 +148,23 @@
         // 7. Couper avant les mentions de caractéristiques techniques / dimensions / spécifications
         clean = clean.replace(/\s*(?:Ø|diam[èe]tre|epaisseur|épaisseur|longueur|largeur|hauteur|poids|filetage|voltage|amp[èe]re|sens\s+de\s+rotation|mat[ée]riau)\s*:?.*$/i, '').trim();
 
-        // 8. Couper avant les détails secondaires (ex: "with o-ring", "avec joint...", "avec vis...", "with screws...")
+        // 8. Couper avant les détails secondaires
         clean = clean.replace(/\s+(?:with\s+o-ring|with\s+screws|with\s+gasket|with\s+seal|with\s+accessories|avec\s+joint|avec\s+vis|avec\s+bague|sans\s+bague|avec\s+accessoires|pour\s+v[ée]hicules).*$/i, '').trim();
 
-        // 9. Si plus de 2 virgules, couper à partir de la 2ème virgule pour garder "Nom, sous-catégorie" (ex: "Gasket, oil filter housing")
+        // 9. Si plus de 2 virgules, couper à partir de la 2ème virgule
         let commaParts = clean.split(',');
         if (commaParts.length > 2) {
             clean = commaParts.slice(0, 2).join(',').trim();
         }
 
-        // 10. Couper les mots de positionnement isolés à la fin du nom (ex: "Biellette avant gauche" -> "Biellette")
+        // 10. Couper les mots de positionnement isolés à la fin du nom
         clean = clean.replace(/\s+(?:avant|arri[èe]re|gauche|droit|droite|sup[ée]rieur|inf[ée]rieur|int[ée]rieur|ext[ée]rieur|front|rear|left|right|upper|lower|inner|outer)$/i, '').trim();
         clean = clean.replace(/\s+(?:avant|arri[èe]re|gauche|droit|droite|sup[ée]rieur|inf[ée]rieur|int[ée]rieur|ext[ée]rieur|front|rear|left|right|upper|lower|inner|outer)$/i, '').trim();
 
         // 11. Nettoyer les ponctuations aux extrémités et espaces multiples
         clean = clean.replace(/\s+/g, ' ').replace(/^[-–:;,.\s]+|[-–:;,.\s]+$/g, '').trim();
 
-        // 12. Limiter à 5 mots maximum pour éviter tout reste de description
+        // 12. Limiter à 5 mots maximum
         let words = clean.split(' ').filter(Boolean);
         if (words.length > 5) {
             clean = words.slice(0, 5).join(' ').replace(/[,;:\s]+$/, '').trim();
@@ -107,7 +173,7 @@
         return clean.trim();
     }
 
-    // Helper: Déduplication des séquences et phrases répétées (ex: "100 715 0002/S 100 715 0002/S" -> "100 715 0002/S", "110441 110441" -> "110441")
+    // Helper: Déduplication des séquences et phrases répétées
     function deduplicateRepeatedPhrase(str) {
         if (!str) return "";
         let s = str.trim();
@@ -140,26 +206,37 @@
     // Helper: Nettoyage et isolation stricte de la référence pièce sans aucun doublon
     function cleanReferenceCode(ref) {
         if (!ref) return "";
-        let clean = String(ref).replace(/[\u00a0\u202F]/g, ' ').replace(/\s+/g, ' ').trim();
+        let clean = String(ref).replace(/[\u00a0\u202F]/g, ' ').trim();
 
-        // 1. Retirer parenthèses et crochets (ex: "(100 715 0002/S)", "[110441 OE]")
-        clean = clean.replace(/\s*\([^)]*\)\s*/g, ' ').trim();
-        clean = clean.replace(/\s*\[[^\]]*\]\s*/g, ' ').trim();
+        // 1. Recoller les tirets et slashs séparés par des espaces (ex: "PL - 13 / 12V - PLA" => "PL-13/12V-PLA")
+        clean = clean.replace(/\s*([-\/])\s*/g, '$1');
 
-        // 2. Retirer préfixes
-        clean = clean.replace(/^(?:art(?:icle)?\.?|r[ée]f(?:[ée]rence)?\.?|code|n[o°]?\.?)\s*:?\s*/i, '');
+        // 2. Retirer parenthèses et crochets SEULEMENT s'ils ne contiennent pas la référence elle-même
+        if (!/\([A-Za-z0-9\/\-_.]+\)/.test(clean) || clean.includes(' ')) {
+            clean = clean.replace(/\s*\([^)]*\)\s*/g, ' ').trim();
+            clean = clean.replace(/\s*\[[^\]]*\]\s*/g, ' ').trim();
+        }
 
-        // 3. Retirer devises / suffixes à la fin
+        // 3. Retirer préfixes
+        clean = clean.replace(/^(?:art(?:icle)?\.?|r[ée]f(?:[ée]rence)?\.?|code|n[o°]?\.?|num[ée]ro\s+d['’]article)\s*:?\s*/i, '');
+
+        // 4. Retirer devises / suffixes à la fin
         clean = clean.replace(/\s+(?:EUR|€|\$|EU|OE|OEM|OEN|ORIGINAL|PI[ÈE]CE|ARTICLE)$/i, '');
         clean = clean.replace(/^(?:OE|OEM|OEN)\s+/i, '');
 
-        // 4. Nettoyage des ponctuations résiduelles
+        // 5. Nettoyage des ponctuations résiduelles aux extrémités
         clean = clean.replace(/^["'();:,\-_/.\s]+|["'();:,\-_/.\s]+$/g, '').trim();
 
-        // 5. Première passe de déduplication de phrases
+        // 6. Si le code contient une référence composite complète (ex: PL-13/12V-PLA, C30005/1), la garder ENTIÈRE
+        let compMatch = clean.match(/\b([A-Za-z0-9]+(?:[-\/][A-Za-z0-9]+)+)\b/);
+        if (compMatch && /\d/.test(compMatch[1]) && compMatch[1].length >= 3) {
+            return compMatch[1].toUpperCase();
+        }
+
+        // 7. Déduplication de phrases
         clean = deduplicateRepeatedPhrase(clean);
 
-        // 6. Analyser les mots de la référence
+        // 8. Analyser les mots de la référence
         let words = clean.split(' ').filter(Boolean);
         if (words.length >= 2) {
             let keepWords = [];
@@ -172,16 +249,13 @@
                     keepWords.push(w);
                 } else {
                     if (!hasSeenDigit) {
-                        // Préfixe court avant les chiffres (ex: "W", "C", "MF", "VO")
                         if (w.length <= 4 && !isDescriptiveWord(w)) {
                             keepWords.push(w);
                         }
                     } else {
-                        // Suffixe technique après chiffres autorisé UNIQUEMENT si contient un symbole (/ - .) (ex: "/S", "/1", "-A")
                         if (/^[\/\-_.]+[A-Za-z0-9]*$/.test(w) || /^[A-Za-z0-9]+[\/\-_.]+[A-Za-z0-9]*$/.test(w)) {
                             keepWords.push(w);
                         } else {
-                            // Mot de marque, devise ou descriptif -> STOP !
                             break;
                         }
                     }
@@ -193,7 +267,7 @@
             }
         }
 
-        // 7. Deuxième passe de déduplication
+        // 9. Deuxième passe de déduplication
         clean = deduplicateRepeatedPhrase(clean);
 
         return clean.trim();
@@ -202,13 +276,27 @@
     // Helper: Découpage précis pour extraire la Référence (avec chiffres), la Marque et la Désignation
     function extractRefAndDescFromText(str) {
         if (!str) return { reference: '', designation: '', brand: '' };
-        let words = str.replace(/\s+/g, ' ').trim().split(' ');
 
+        // 1. Recoller les tirets et slashs avec espaces
+        let s = str.replace(/[\u00a0\u202F]/g, ' ').replace(/\s*([-\/])\s*/g, '$1').replace(/\s+/g, ' ').trim();
+
+        // 2. Détection prioritaire d'une référence composite complète (ex: "PL-13/12V-PLA", "W712/75", "10-1234-A")
+        let compMatch = s.match(/\b([A-Za-z0-9]+(?:[-\/][A-Za-z0-9]+)+)\b/);
+        if (compMatch && /\d/.test(compMatch[1]) && compMatch[1].length >= 4) {
+            let fullRef = compMatch[1].toUpperCase();
+            let fullDesc = s.replace(compMatch[0], '').trim();
+            return {
+                reference: fullRef,
+                designation: cleanShortProductName(fullDesc)
+            };
+        }
+
+        let words = s.split(' ');
         let firstRefIndex = -1;
         for (let i = 0; i < words.length; i++) {
             let w = words[i];
             if (/\d/.test(w)) {
-                if (i > 0 && /^[A-Za-z]{1,2}$/.test(words[i - 1]) && !isDescriptiveWord(words[i - 1])) {
+                if (i > 0 && /^[A-Za-z]{1,4}$/.test(words[i - 1]) && !isDescriptiveWord(words[i - 1])) {
                     firstRefIndex = i - 1;
                 } else {
                     firstRefIndex = i;
@@ -228,7 +316,7 @@
                 if (inRef) {
                     if (/\d/.test(w)) {
                         refWords.push(w);
-                    } else if (j === firstRefIndex && w.length <= 2) {
+                    } else if (j === firstRefIndex && w.length <= 4) {
                         refWords.push(w);
                     } else if (/^[\/\-_.]+[A-Za-z0-9]*$/.test(w) || /^[A-Za-z0-9]+[\/\-_.]+[A-Za-z0-9]*$/.test(w)) {
                         refWords.push(w);
@@ -251,8 +339,8 @@
         }
 
         return {
-            reference: cleanReferenceCode(str.trim()),
-            designation: cleanShortProductName(str.trim())
+            reference: cleanReferenceCode(s.trim()),
+            designation: cleanShortProductName(s.trim())
         };
     }
 
@@ -268,10 +356,8 @@
         let s = String(numStr).replace(/[\s\u00a0\u202F]/g, '');
         if (s.includes('.') && s.includes(',')) {
             if (s.indexOf('.') < s.indexOf(',')) {
-                // Format européen: 1.234,56
                 s = s.replace(/\./g, '').replace(',', '.');
             } else {
-                // Format US: 1,234.56
                 s = s.replace(/,/g, '');
             }
         } else if (s.includes(',')) {
@@ -286,28 +372,24 @@
         if (!text) return 0;
         text = text.replace(/[\u00a0\u202F]/g, ' ').trim();
 
-        // 1. Cherche un motif avec symbole euro/EUR après (ex: "12,50 €", "1 234,56 EUR")
         let euroMatch = text.match(/([0-9]{1,3}(?:[\s\.]\d{3})*(?:[,\.]\d{1,2})|[0-9]+(?:[,\.]\d{1,2})?)\s*(?:€|EUR)/i);
         if (euroMatch) {
             let p = cleanPriceNumber(euroMatch[1]);
             if (p > 0) return p;
         }
 
-        // 2. Cherche un motif avec symbole euro/EUR avant (ex: "€ 12,50", "EUR 12.50")
         let prefixMatch = text.match(/(?:€|EUR)\s*([0-9]{1,3}(?:[\s\.]\d{3})*(?:[,\.]\d{1,2})|[0-9]+(?:[,\.]\d{1,2})?)/i);
         if (prefixMatch) {
             let p = cleanPriceNumber(prefixMatch[1]);
             if (p > 0) return p;
         }
 
-        // 3. Cherche un nombre décimal à 2 chiffres après virgule/point (ex: "12,50" ou "12.50")
         let decMatch = text.match(/([0-9]{1,3}(?:[\s\.]\d{3})*[,\.]\d{2})/);
         if (decMatch) {
             let p = cleanPriceNumber(decMatch[1]);
             if (p > 0) return p;
         }
 
-        // 4. Dernier recours: tout nombre valide
         let anyMatch = text.match(/([0-9]+(?:[,\.]\d+)?)/);
         if (anyMatch) {
             let p = cleanPriceNumber(anyMatch[1]);
@@ -320,35 +402,48 @@
     // Helper: Mise à jour valeur Input compatible React / Mantine
     function setInputValue(input, value) {
         if (!input || value === undefined || value === null) return;
-        input.focus();
+        try {
+            input.focus();
 
-        const stringVal = String(value);
+            // Formatage avec POINT obligatoire pour GKR
+            let stringVal = String(value);
+            if (typeof value === 'number') {
+                stringVal = Number.isInteger(value) ? String(value) : value.toFixed(2);
+            } else if (stringVal.includes(',')) {
+                stringVal = stringVal.replace(',', '.');
+            }
 
-        const applyVal = (val) => {
+            // 1. Sélectionner tout le texte
+            try {
+                if (typeof input.select === 'function') input.select();
+            } catch (e) {}
+
+            // 2. Mise à jour React Tracker + Prototype
             const tracker = input._valueTracker;
             if (tracker) {
                 tracker.setValue(input.value + '_prev');
             }
-            const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+            const proto = input instanceof HTMLTextAreaElement ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+            const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
             if (setter) {
-                setter.call(input, val);
+                setter.call(input, stringVal);
             } else {
-                input.value = val;
+                input.value = stringVal;
             }
+
+            // 3. Événements React / Mantine
+            input.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: stringVal }));
             input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
             input.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-        };
 
-        applyVal(stringVal);
-
-        // Si le champ NumberInput n'a pas pris en compte la valeur avec point, tester avec virgule
-        if (typeof value === 'number' && stringVal.includes('.') && (!input.value || input.value === '0')) {
-            applyVal(stringVal.replace('.', ','));
+            // 4. Clôture avec Enter et Blur pour forcer Mantine à recalculer
+            input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter', code: 'Enter', keyCode: 13, which: 13 }));
+            input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter', code: 'Enter', keyCode: 13, which: 13 }));
+            input.dispatchEvent(new FocusEvent('blur', { bubbles: true, composed: true }));
+            input.blur();
+        } catch (e) {
+            console.error('[setInputValue error]', e);
         }
-
-        input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }));
-        input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter' }));
-        input.blur();
     }
 
     // Helper: Mise à jour valeur Textarea compatible React
@@ -371,156 +466,9 @@
     }
 
     // ==========================================
-    //  COTE APCAT (Extraction)
-    // ==========================================
-    function extractApcatCart() {
-        let items = [];
-
-        let qtyInputs = document.querySelectorAll('input[id$="_qcc"], input.numeric_textbox, input[name*="qcc"]');
-        if (qtyInputs.length === 0) {
-            qtyInputs = document.querySelectorAll('tr input[type="text"], tr input[type="number"], tr input.colorClass_InputBox');
-        }
-
-        qtyInputs.forEach(input => {
-            let qty = parseInt(input.value) || 0;
-            if (qty <= 0) return;
-
-            let parent = input.parentElement;
-            let link = null;
-            while (parent && parent !== document.body && parent.id !== 'bsk_all_main_pnl') {
-                link = parent.querySelector('a[href*="55="]') || parent.querySelector('a[title*="détails"]') || parent.querySelector('a[href*="default.aspx"]');
-                if (link) break;
-                parent = parent.parentElement;
-            }
-
-            let reference = "";
-            let group = "";
-            let description = "";
-
-            if (link) {
-                let spans = link.querySelectorAll('span');
-                if (spans.length >= 3) {
-                    group = spans[0].textContent.trim();
-                    description = cleanShortProductName(spans[1].textContent.trim(), group);
-                    reference = cleanReferenceCode(spans[2].textContent.trim());
-                } else if (spans.length === 2) {
-                    let s0 = spans[0].textContent.trim();
-                    let s1 = spans[1].textContent.trim();
-                    if (/\d/.test(s1) && !/\d/.test(s0)) {
-                        group = s0;
-                        reference = cleanReferenceCode(s1);
-                    } else {
-                        group = s0;
-                        description = cleanShortProductName(s1, group);
-                    }
-                } else if (spans.length === 1) {
-                    description = cleanShortProductName(spans[0].textContent.trim());
-                }
-            }
-
-            // Si pas trouvé dans les spans, chercher à côté du bouton de copie officiel APCAT
-            if (!reference && parent) {
-                let copyBtn = parent.querySelector('input.al_imgcopy');
-                if (copyBtn) {
-                    let parentDiv = copyBtn.closest('div');
-                    if (parentDiv && parentDiv.previousElementSibling) {
-                        reference = cleanReferenceCode(parentDiv.previousElementSibling.textContent.trim());
-                    }
-                }
-            }
-
-            // Recherche dans les autres spans du parent sans filtrer aucun caractère
-            if (!reference && parent) {
-                let spans = parent.querySelectorAll('span');
-                for (let s of spans) {
-                    let txt = s.textContent.trim();
-                    if (/\d/.test(txt) && !txt.includes('EUR') && !txt.includes('€') && !txt.includes('Quantité') && !txt.includes('Achat') && txt.length >= 2) {
-                        reference = cleanReferenceCode(txt);
-                        break;
-                    }
-                }
-            }
-
-            // Fallback : paramètre URL 55= uniquement si rien trouvé dans le texte affiché
-            if (!reference && link) {
-                let hrefAttr = link.getAttribute('href') || link.href || "";
-                let match = hrefAttr.match(/[?&]55=([^&]+)/);
-                if (match) {
-                    reference = cleanReferenceCode(decodeURIComponent(match[1]).replace(/\+/g, ' ').trim());
-                }
-            }
-
-            if (reference) {
-                reference = cleanReferenceCode(reference);
-            }
-
-            // Nettoyage de la description pour ne jamais dupliquer la référence
-            if (description && reference && (description.toLowerCase() === reference.toLowerCase() || /^(?:OE|OEM|OEN)$/i.test(description.trim()))) {
-                description = "";
-            }
-
-            // APCAT affiche "Achat net" qui est déjà un prix HT
-            let price = 0;
-            let parentText = parent ? parent.textContent : "";
-            let priceMatch = parentText.match(/Achat net\s*:?\s*([\d,.\s]+)(?:EUR)?/i) || parentText.match(/(\d+[\.,]\d{2})\s*EUR/i);
-            if (priceMatch) {
-                price = cleanPriceNumber(priceMatch[1]);
-            } else {
-                price = parsePriceFromText(parentText);
-            }
-
-            if (reference) {
-                items.push({
-                    reference: reference,
-                    group: group,
-                    description: cleanShortProductName(description, group) || group || 'Article',
-                    quantity: qty,
-                    price: price
-                });
-            }
-        });
-
-        let note = "";
-        let noteTextarea = document.getElementById('basket_dispatch_memo_memobx_readme') || document.querySelector('textarea[id*="memo"]') || document.querySelector('textarea');
-        if (noteTextarea) {
-            note = noteTextarea.value.trim();
-        }
-
-        console.log('[APCAT Export] Articles extraits :', items);
-        return { items: items, note: note };
-    }
-
-    function addApcatExportButton() {
-        let panel = document.getElementById('bsk_all_main_pnl');
-        if (!panel) return;
-        if (document.getElementById('apcat-export-btn')) return;
-
-        let btn = document.createElement('button');
-        btn.id = 'apcat-export-btn';
-        btn.textContent = '🚀 Copier mon panier APCAT vers GKR';
-        btn.style.cssText = 'margin: 10px 0; padding: 12px 20px; background-color: #28a745; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 15px; width: 100%; box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: background 0.3s;';
-        btn.onmouseover = () => btn.style.backgroundColor = '#218838';
-        btn.onmouseout = () => btn.style.backgroundColor = '#28a745';
-
-        btn.addEventListener('click', () => {
-            let data = extractApcatCart();
-            if (data.items.length === 0) {
-                alert('Aucun article trouvé dans le panier APCAT.');
-                return;
-            }
-            GM_setValue('apcat_cart_data', data);
-            let details = data.items.map(it => `• ${it.reference} (Qté: ${it.quantity}, Prix HT: ${it.price.toFixed(2)} €)`).join('\n');
-            alert(`✅ ${data.items.length} article(s) APCAT exporté(s) !\n\n${details}\n\nSur GKR, cliquez sur "Importer APCAT".`);
-        });
-
-        panel.insertBefore(btn, panel.firstChild);
-    }
-
-    // ==========================================
     //  COTE TOPAUTOPIECES (Extraction & Conversion HTVAC)
     // ==========================================
     function extractTopAutoPiecesPrice(row, quantityInput, index, quantity) {
-        // 1. Chercher par IDs spécifiques connus
         const idCandidates = [
             `cart_price_${index}`,
             `price_${index}`,
@@ -544,7 +492,6 @@
         }
         if (!row) return 0;
 
-        // 2. Chercher dans les éléments ayant une classe liée au prix
         let priceEls = row.querySelectorAll('.price, .cart_price, .unit_price, .unit-price, .product-price, .item-price, .item_price, .price-unit, .p-price, [class*="price"], [class*="Price"]');
         for (let el of priceEls) {
             if (el.closest('del, s') || el.classList.contains('old-price') || el.classList.contains('price-old')) continue;
@@ -552,7 +499,6 @@
             if (p > 0) return p;
         }
 
-        // 3. Inspecter les cellules TD autour de la cellule quantité
         let quantityCell = quantityInput ? quantityInput.closest('td') : null;
 
         if (quantityCell && quantityCell.previousElementSibling) {
@@ -572,7 +518,6 @@
             }
         }
 
-        // 4. Parcourir toutes les cellules TD de la ligne contenant un symbole monétaire
         let cells = Array.from(row.querySelectorAll('td'));
         for (let cell of cells) {
             if (cell === quantityCell) continue;
@@ -582,7 +527,6 @@
             }
         }
 
-        // 5. Recherche globale dans le texte de la ligne
         let rowPrice = parsePriceFromText(row.textContent);
         if (rowPrice > 0) return rowPrice;
 
@@ -628,12 +572,68 @@
             let reference = '';
             let url = productLink ? (productLink.getAttribute('href') || productLink.href || '') : '';
 
+            // 0. Priorité absolue : ID direct TopAutoPieces (ex: id="index_4" ou [id^="index_"])
+            let indexEl = document.getElementById(`index_${i}`) || (row ? row.querySelector('[id^="index_"]') : null);
+            if (indexEl) {
+                let txt = (indexEl.textContent || indexEl.value || indexEl.getAttribute('data-article-number') || '').trim();
+                txt = txt.replace(/^(?:Art\.?\s*N[o°]?|R[ée]f\.?|Num[ée]ro\s+d['’]article|Code\s+article)\s*:?\s*/i, '');
+                let cleaned = cleanReferenceCode(txt);
+                if (cleaned) {
+                    reference = cleaned;
+                    console.log(`[TopAuto Export] Référence trouvée via index_${i} =>`, reference);
+                }
+            }
+
+            // 1. Chercher le numéro d'article officiel dans la ligne (TopAutoPieces / Autopieces)
+            if (!reference && row) {
+                let artEl = row.querySelector('.art_number, .article-number, .art-num, .prod-num, .art_num, .item-number, .nr, .product-nr, [class*="art_num"], [class*="art-num"], [class*="article_nr"], [class*="article-nr"]');
+                if (artEl) {
+                    let txt = artEl.textContent.trim().replace(/^(?:Art\.?\s*N[o°]?|R[ée]f\.?|Num[ée]ro\s+d['’]article|Code\s+article)\s*:?\s*/i, '');
+                    let cleaned = cleanReferenceCode(txt);
+                    if (cleaned) reference = cleaned;
+                }
+
+                if (!reference) {
+                    let refMatch = rowText.match(/(?:Num[ée]ro\s+d['’]article|Art(?:icle)?\.?\s*N[o°]?|R[ée]f(?:[ée]rence)?|Code\s+article)\s*:?\s*([A-Za-z0-9\/\-_.\s]{3,35})/i);
+                    if (refMatch) {
+                        let cleaned = cleanReferenceCode(refMatch[1].trim());
+                        if (cleaned) reference = cleaned;
+                    }
+                }
+            }
+
+            // 2. Extraire la désignation depuis description_X en priorité absolue (limité à 50-55 caractères)
+            let descEl = document.getElementById(`description_${i}`) ||
+                         (row ? row.querySelector('[id^="description_"]') : null) ||
+                         document.getElementById(`tow_info_${i}`) ||
+                         document.getElementById('tow_info') ||
+                         (row ? row.querySelector('.tow_info, #tow_info, [class*="tow_info"], [id*="tow_info"], .two_info, #two_info, [class*="two_info"], [id*="two_info"]') : null);
+            if (descEl) {
+                let txt = (descEl.textContent || descEl.value || '').replace(/\s+/g, ' ').trim();
+                if (txt) {
+                    let cleaned = cleanShortProductName(txt, brand);
+                    if (cleaned.length > 50) {
+                        cleaned = cleaned.slice(0, 50).trim();
+                    }
+                    designation = cleaned;
+                    console.log(`[TopAuto Export] Désignation trouvée via description_${i} =>`, designation);
+                }
+            }
+
+            // 3. Extraire titre, désignation et marque depuis productLink
             if (productLink) {
                 let fullText = productLink.textContent.replace(/\s+/g, ' ').trim();
                 let parsed = extractRefAndDescFromText(fullText);
 
-                reference = cleanReferenceCode(parsed.reference);
-                designation = parsed.designation;
+                // Si aucune référence officielle n'a été trouvée, utiliser celle du titre
+                if (!reference) {
+                    reference = cleanReferenceCode(parsed.reference);
+                }
+                if (!designation) {
+                    let d = parsed.designation || '';
+                    if (d.length > 50) d = d.slice(0, 50).trim();
+                    designation = d;
+                }
 
                 let spans = Array.from(productLink.querySelectorAll('span'));
                 let leafSpans = spans.filter(span => span.querySelectorAll('span').length === 0);
@@ -645,7 +645,6 @@
                     }
                 }
 
-                // Si la marque n'est pas encore identifiée, chercher dans les mots du lien
                 if (!brand) {
                     let rawWords = fullText.split(/\s+/);
                     for (let w of rawWords) {
@@ -658,7 +657,6 @@
                 }
             }
 
-            // Nettoyage de la désignation (nom de la pièce)
             if (designation && reference) {
                 if (designation.toLowerCase() === reference.toLowerCase() || /^(?:OE|OEM|OEN)$/i.test(designation.trim())) {
                     designation = "";
@@ -668,24 +666,7 @@
                 }
             }
 
-            // Si la référence n'a pas été trouvée, recherche dans la ligne (ex: Art. N°)
-            if (!reference && row) {
-                let artEl = row.querySelector('.art_number, .article-number, .art-num, .prod-num, .art_num, .item-number');
-                if (artEl) {
-                    let txt = artEl.textContent.trim().replace(/^(?:Art\.?\s*N[o°]?|R[ée]f\.?)\s*:?\s*/i, '');
-                    if (txt) {
-                        reference = cleanReferenceCode(txt.trim());
-                    }
-                }
-                if (!reference) {
-                    let refMatch = rowText.match(/(?:Art\.?\s*N[o°]?|Num[ée]ro\s+d['’]article|R[ée]f(?:[ée]rence)?|Code\s+article)\s*:?\s*([^\r\n\t]+)/i);
-                    if (refMatch) {
-                        reference = cleanReferenceCode(refMatch[1].trim());
-                    }
-                }
-            }
-
-            // Dernier recours : extraction depuis l'URL du produit
+            // 3. Fallback URL si toujours rien
             if (!reference && url) {
                 let urlParts = url.split(/[/?#]/).filter(Boolean);
                 let slug = urlParts[urlParts.length - 1] || '';
@@ -697,12 +678,12 @@
             }
 
             items.push({
-                reference: reference || 'INCONNU',   // Référence exacte et unique (ex: 110441, 100 715 0002/S, LE26265.35)
-                group: brand,                        // Marque de la pièce (ex: MEYLE, LEMA, MOOG, DT, AJUSA)
-                description: cleanShortProductName(designation, brand) || 'Article', // Nom propre et épuré de la pièce
+                reference: reference || 'INCONNU',
+                group: brand,
+                description: cleanShortProductName(designation, brand) || 'Article',
                 quantity: quantity,
-                price: priceHT,                      // Prix unitaire HT injecté dans GKR
-                priceTvac: rawPrice                  // Prix TVAC d'origine pour information
+                price: priceHT,
+                priceTvac: rawPrice
             });
         });
 
@@ -733,166 +714,179 @@
         btn.addEventListener('click', () => {
             let data = extractTopAutoPiecesCart();
             if (data.items.length === 0) {
-                alert('Aucun article trouvé dans le panier TopAutoPieces.');
+                showToast('Aucun article trouvé dans le panier TopAutoPieces.', 'warning');
                 return;
             }
             GM_setValue('topauto_cart_data', data);
-            let details = data.items.map(it => `• ${it.reference} (Qté: ${it.quantity}, Prix HT: ${it.price.toFixed(2)} € [TVAC: ${it.priceTvac ? it.priceTvac.toFixed(2) + ' €' : '-'}])`).join('\n');
-            alert(`✅ ${data.items.length} article(s) TopAutoPieces exporté(s) en HTVAC !\n\n${details}\n\nSur GKR, cliquez sur "Importer TopAuto".`);
+            let details = data.items.map(it => `• [${it.reference}] ${it.group ? it.group + ' - ' : ''}${it.description} (Qté: ${it.quantity}, Prix HT: ${it.price.toFixed(2)} € [TVAC: ${it.priceTvac ? it.priceTvac.toFixed(2) + ' €' : '-'}])`).join('\n');
+            showToast(`🚀 ${data.items.length} article(s) TopAutoPieces exporté(s) :\n\n${details}\n\n👉 Sur GKR, cliquez sur "Importer TopAuto".`, 'success', 7000);
         });
     }
 
     // ==========================================
-    //  COTE GKR (Importation avec détection de colonnes)
+    //  COTE GKR (Importation)
     // ==========================================
-    async function fillLatestDiversRow(item) {
-        let rows = document.querySelectorAll('tbody tr, table tr');
-        if (rows.length === 0) return;
+    function getGkrArticleRows() {
+        return Array.from(document.querySelectorAll('tbody tr, tr')).filter(r => {
+            let inps = r.querySelectorAll('input:not([type="checkbox"]):not([type="hidden"])');
+            return inps.length >= 2;
+        });
+    }
 
-        let candidateRows = Array.from(rows).filter(r => r.querySelectorAll('input').length >= 2);
-        if (candidateRows.length === 0) return;
-        let latestRow = candidateRows[candidateRows.length - 1];
+    async function fillLatestDiversRow(targetRow, item) {
+        if (!targetRow) return;
 
-        let table = latestRow.closest('table');
-        let headerThs = table ? Array.from(table.querySelectorAll('thead th, tr th')) : [];
-        let headers = headerThs.map(th => th.textContent.trim().toLowerCase());
+        let inputs = Array.from(targetRow.querySelectorAll('input:not([type="checkbox"]):not([type="hidden"])'));
+        if (inputs.length === 0) return;
 
         let codeInput = null;
         let descInput = null;
         let priceInput = null;
         let qtyInput = null;
+        let montantInput = null;
 
-        // 1. Détection par les colonnes du tableau (TH <-> TD)
-        let cells = Array.from(latestRow.querySelectorAll('td'));
-        cells.forEach((td, colIdx) => {
-            let headerText = headers[colIdx] || '';
-            let input = td.querySelector('input');
-            if (!input) return;
+        // Détection par colonnes TH si présentes
+        let table = targetRow.closest('table');
+        let cells = Array.from(targetRow.querySelectorAll('td'));
+        if (table && cells.length > 0) {
+            let ths = Array.from(table.querySelectorAll('thead th, tr th'));
+            ths.forEach(th => {
+                let txt = (th.textContent || '').trim().toLowerCase();
+                let idx = th.cellIndex !== undefined ? th.cellIndex : -1;
+                if (idx < 0) return;
+                let cell = cells.find(td => td.cellIndex === idx);
+                let inp = cell ? cell.querySelector('input') : null;
+                if (!inp) return;
 
-            if (headerText.includes('code') || headerText.includes('réf') || headerText.includes('ref') || headerText.includes('article') || headerText.includes('numéro') || headerText.includes('sku')) {
-                codeInput = input;
-            } else if (headerText.includes('désignation') || headerText.includes('designation') || headerText.includes('description') || headerText.includes('nom') || headerText.includes('libellé') || headerText.includes('libelle')) {
-                descInput = input;
-            } else if (headerText.includes('prix') || headerText.includes('pu') || headerText.includes('achat') || headerText.includes('montant') || headerText.includes('ht') || headerText.includes('price') || headerText.includes('€')) {
-                priceInput = input;
-            } else if (headerText.includes('qte') || headerText.includes('qté') || headerText.includes('quantité') || headerText.includes('qty') || headerText.includes('nombre')) {
-                qtyInput = input;
-            }
-        });
-
-        // 2. Détection par placeholder, aria-label, name, title des inputs
-        let allInputs = Array.from(latestRow.querySelectorAll('input'));
-        allInputs.forEach(input => {
-            let ph = (input.placeholder || '').toLowerCase();
-            let aria = (input.getAttribute('aria-label') || '').toLowerCase();
-            let name = (input.name || '').toLowerCase();
-            let title = (input.title || '').toLowerCase();
-            let label = ph + ' ' + aria + ' ' + name + ' ' + title;
-
-            if (!codeInput && (label.includes('code') || label.includes('réf') || label.includes('ref') || label.includes('article') || label.includes('sku'))) {
-                codeInput = input;
-            } else if (!descInput && (label.includes('désignation') || label.includes('designation') || label.includes('description') || label.includes('nom') || label.includes('libellé') || label.includes('libelle'))) {
-                descInput = input;
-            } else if (!priceInput && (label.includes('prix') || label.includes('pu') || label.includes('achat') || label.includes('montant') || label.includes('ht') || label.includes('price') || label.includes('€'))) {
-                priceInput = input;
-            } else if (!qtyInput && (label.includes('qte') || label.includes('qté') || label.includes('quantité') || label.includes('qty') || label.includes('nombre'))) {
-                qtyInput = input;
-            }
-        });
-
-        // 3. Séparation par type (Text vs Number) si non encore trouvés
-        let textInputs = allInputs.filter(i => (i.type === 'text' || !i.type) && i.inputMode !== 'decimal' && i.inputMode !== 'numeric' && !i.classList.contains('mantine-NumberInput-input'));
-        let numberInputs = allInputs.filter(i => i.type === 'number' || i.inputMode === 'decimal' || i.inputMode === 'numeric' || i.classList.contains('mantine-NumberInput-input'));
-
-        if (!codeInput && !descInput) {
-            if (textInputs.length >= 2) {
-                codeInput = textInputs[0];
-                descInput = textInputs[1];
-            } else if (textInputs.length === 1) {
-                codeInput = textInputs[0];
-            }
-        } else if (!codeInput && descInput) {
-            codeInput = textInputs.find(i => i !== descInput);
-        } else if (codeInput && !descInput) {
-            descInput = textInputs.find(i => i !== codeInput);
+                if (txt === 'code' || ((txt.includes('code') || txt.includes('réf') || txt.includes('ref')) && !txt.includes('désignation'))) {
+                    codeInput = inp;
+                } else if (txt.includes('désignation') || txt.includes('designation') || txt.includes('description') || txt.includes('nom') || txt.includes('article')) {
+                    descInput = inp;
+                } else if (txt.includes('qte') || txt.includes('qté') || txt.includes('quantité') || txt.includes('qty')) {
+                    qtyInput = inp;
+                } else if (txt.includes('prix htva') || txt.includes('prix ht') || txt.includes('achat')) {
+                    priceInput = inp;
+                } else if (txt.includes('montant') || txt.includes('total tvac') || txt.includes('tvac')) {
+                    montantInput = inp;
+                }
+            });
         }
 
-        if (!priceInput || !qtyInput) {
-            if (numberInputs.length >= 2) {
-                if (!priceInput) priceInput = numberInputs[0];
-                if (!qtyInput) qtyInput = numberInputs[1];
-            } else if (numberInputs.length === 1) {
-                if (!priceInput) priceInput = numberInputs[0];
-            }
+        // Fallback positionnel direct (ordre standard des colonnes GKR)
+        // [0: Code, 1: Désignation, 2: Prix HTVA, 3: Qté, 4: Remise, 5: Montant]
+        if (inputs.length >= 6) {
+            if (!codeInput) codeInput = inputs[0];
+            if (!descInput) descInput = inputs[1];
+            if (!priceInput) priceInput = inputs[2];
+            if (!qtyInput) qtyInput = inputs[3];
+            if (!montantInput) montantInput = inputs[5];
+        } else if (inputs.length >= 5) {
+            if (!codeInput) codeInput = inputs[0];
+            if (!descInput) descInput = inputs[1];
+            if (!priceInput) priceInput = inputs[2];
+            if (!qtyInput) qtyInput = inputs[3];
+            if (!montantInput) montantInput = inputs[4];
+        } else if (inputs.length >= 4) {
+            if (!codeInput) codeInput = inputs[0];
+            if (!descInput) descInput = inputs[1];
+            if (!priceInput) priceInput = inputs[2];
+            if (!qtyInput) qtyInput = inputs[3];
         }
-
-        console.log('[GKR Linker] Code Input:', codeInput, 'Desc Input:', descInput);
 
         let finalRef = cleanReferenceCode(item.reference);
+        let brand = (item.group || '').trim();
+        let name = cleanShortProductName(item.description || '', brand);
+        if (finalRef) {
+            name = name.replace(new RegExp(finalRef.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'gi'), '').trim();
+        }
+        name = cleanShortProductName(name, brand);
+        if (name.length > 50) {
+            name = name.slice(0, 50).trim();
+        }
+        let descText = brand && name ? `${brand} - ${name}` : (brand || name || 'Article');
+        if (descText.length > 55) {
+            descText = descText.slice(0, 55).trim();
+        }
 
-        // 1. Injection dans le champ Code (Référence pure de la pièce)
-        if (codeInput) {
-            console.log('[GKR Linker] => Insertion dans CODE (Réf pièce) :', finalRef);
+        let qty = item.quantity || 1;
+        let priceHT = typeof item.price === 'number' ? item.price : parseFloat(String(item.price).replace(',', '.')) || 0;
+        let formattedPriceHT = priceHT.toFixed(2);
+        let montantTVAC = (priceHT * qty * 1.21).toFixed(2);
+
+        console.log('[GKR Linker TopAuto] Remplissage ligne =>', {
+            code: finalRef,
+            desc: descText,
+            priceHT: formattedPriceHT,
+            qty: qty,
+            montantTVAC: montantTVAC,
+            hasMontantInput: !!montantInput
+        });
+
+        // 1. Code
+        if (codeInput && finalRef) {
             setInputValue(codeInput, finalRef);
+            await sleep(80);
         }
 
-        // 2. Injection dans le champ Désignation strictement formaté en "Marque - Nom de la pièce"
+        // 2. Désignation
         if (descInput) {
-            let brand = (item.group || '').trim();
-            let name = cleanShortProductName(item.description || '', brand);
-
-            // Retirer la référence du nom de la pièce si présente
-            if (finalRef) {
-                name = name.replace(new RegExp(finalRef.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'gi'), '').trim();
-            }
-
-            // Retirer les devises et suffixes parasites
-            name = name.replace(/\b(?:EUR|€|\$|EU|OE|OEM|OEN|ORIGINAL)\b/gi, '').trim();
-            name = name.replace(/^[-–:;,.\s]+|[-–:;,.\s]+$/g, '').trim();
-
-            // Supprimer la marque du nom pour qu'elle ne soit pas répétée
-            if (brand) {
-                let escapedBrand = brand.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-                name = name.replace(new RegExp('\\b' + escapedBrand + '\\b', 'gi'), '').trim();
-            }
-
-            // Nettoyage final du nom
-            name = cleanShortProductName(name, brand);
-
-            // Format strict : Marque - Nom (ex: "MEYLE - Repair Kit, stabiliser bush", "AJUSA - Gasket, oil filter housing")
-            let descText = "";
-            if (brand && name) {
-                descText = `${brand} - ${name}`;
-            } else if (brand && !name) {
-                descText = brand;
-            } else if (!brand && name) {
-                descText = name;
-            } else {
-                descText = 'Article';
-            }
-
-            console.log('[GKR Linker] => Insertion dans DÉSIGNATION (Marque - Nom) :', descText);
-            setInputValue(descInput, descText);
+            let fullText = (codeInput && codeInput !== descInput) ? descText : (finalRef ? `${finalRef} - ${descText}` : descText);
+            setInputValue(descInput, fullText);
+            await sleep(80);
         }
 
-        // 3. Injection Prix et Quantité
-        if (priceInput) {
-            console.log('[GKR Linker] => Insertion dans PRIX HT :', item.price);
-            setInputValue(priceInput, item.price);
+        // 3. Prix HTVA d'achat (Col 3)
+        if (priceInput && priceHT > 0) {
+            setInputValue(priceInput, formattedPriceHT);
+            await sleep(80);
         }
-        if (qtyInput) {
-            console.log('[GKR Linker] => Insertion dans QUANTITÉ :', item.quantity);
-            setInputValue(qtyInput, item.quantity);
+
+        // 4. Quantité (Col 4)
+        if (qtyInput && qty) {
+            setInputValue(qtyInput, qty);
+            await sleep(80);
+        }
+
+        // 5. Montant TVAC (Col 10) - La colonne demandée par GKR en édition
+        if (montantInput && priceHT > 0) {
+            setInputValue(montantInput, montantTVAC);
+            await sleep(80);
         }
     }
 
     async function importItem(item) {
         let buttons = document.querySelectorAll('button');
         let diversBtn = Array.from(buttons).find(b => b.textContent.includes('Produit divers'));
-        if (diversBtn) {
-            diversBtn.click();
-            await sleep(400);
-            await fillLatestDiversRow(item);
+        if (!diversBtn) {
+            console.warn('[GKR Linker TopAuto] Bouton "Produit divers" non trouvé !');
+            return;
+        }
+
+        let beforeRows = getGkrArticleRows();
+        let countBefore = beforeRows.length;
+
+        diversBtn.click();
+
+        let targetRow = null;
+        for (let i = 0; i < 35; i++) {
+            await sleep(100);
+            let currentRows = getGkrArticleRows();
+            if (currentRows.length > countBefore) {
+                targetRow = currentRows[currentRows.length - 1];
+                break;
+            }
+        }
+
+        if (!targetRow) {
+            let allRows = getGkrArticleRows();
+            if (allRows.length > 0) {
+                targetRow = allRows[allRows.length - 1];
+            }
+        }
+
+        if (targetRow) {
+            await sleep(250);
+            await fillLatestDiversRow(targetRow, item);
         }
     }
 
@@ -908,41 +902,13 @@
         }
     }
 
-    function addGkrImportButtons() {
+    function addGkrImportButton() {
         let buttons = document.querySelectorAll('button');
         let diversBtn = Array.from(buttons).find(b => b.textContent.includes('Produit divers'));
         if (!diversBtn) return;
-        if (document.getElementById('gkr-import-apcat-btn')) return;
+        if (document.getElementById('gkr-import-topauto-btn')) return;
 
-        // 1. Bouton Import APCAT (Vert)
-        let btnApcat = document.createElement('button');
-        btnApcat.id = 'gkr-import-apcat-btn';
-        btnApcat.textContent = '📥 Importer APCAT';
-        btnApcat.style.cssText = 'margin-left: 10px; padding: 10px 16px; background-color: #28a745; color: white; border: none; border-radius: 6px; cursor: pointer; font-family: Roboto, Helvetica, Arial, sans-serif; font-weight: bold; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.15); transition: background 0.3s;';
-        btnApcat.onmouseover = () => btnApcat.style.backgroundColor = '#218838';
-        btnApcat.onmouseout = () => btnApcat.style.backgroundColor = '#28a745';
-
-        btnApcat.addEventListener('click', async () => {
-            btnApcat.disabled = true;
-            btnApcat.textContent = '⏳ Import APCAT...';
-            try {
-                let data = GM_getValue('apcat_cart_data');
-                if (!data || !data.items || data.items.length === 0) {
-                    alert('Aucune donnée APCAT enregistrée. Cliquez d\'abord sur "Copier mon panier APCAT vers GKR" dans APCAT.');
-                    return;
-                }
-                await importItems(data);
-                alert(`🎉 Panier APCAT (${data.items.length} articles) importé avec succès !`);
-            } catch (e) {
-                console.error(e);
-                alert('Erreur lors de l\'import APCAT: ' + e.message);
-            } finally {
-                btnApcat.disabled = false;
-                btnApcat.textContent = '📥 Importer APCAT';
-            }
-        });
-
-        // 2. Bouton Import TopAutoPieces (Bleu)
+        // Bouton Import TopAutoPieces (Bleu)
         let btnTopAuto = document.createElement('button');
         btnTopAuto.id = 'gkr-import-topauto-btn';
         btnTopAuto.textContent = '📥 Importer TopAuto';
@@ -956,34 +922,33 @@
             try {
                 let data = GM_getValue('topauto_cart_data');
                 if (!data || !data.items || data.items.length === 0) {
-                    alert('Aucune donnée TopAutoPieces enregistrée. Cliquez d\'abord sur "Copier mon panier TopAuto vers GKR" dans TopAutoPieces.');
+                    showToast('Aucune donnée TopAutoPieces enregistrée. Cliquez d\'abord sur "Copier mon panier TopAuto vers GKR" dans TopAutoPieces.', 'warning');
                     return;
                 }
                 await importItems(data);
-                alert(`🎉 Panier TopAutoPieces (${data.items.length} articles) importé avec succès !`);
+                showToast(`🎉 Panier TopAutoPieces (${data.items.length} article(s)) importé avec succès !`, 'success', 5000);
             } catch (e) {
                 console.error(e);
-                alert('Erreur lors de l\'import TopAuto: ' + e.message);
+                showToast('Erreur lors de l\'import TopAuto: ' + e.message, 'error', 6000);
             } finally {
                 btnTopAuto.disabled = false;
                 btnTopAuto.textContent = '📥 Importer TopAuto';
             }
         });
 
-        diversBtn.parentNode.insertBefore(btnApcat, diversBtn.nextSibling);
-        btnApcat.parentNode.insertBefore(btnTopAuto, btnApcat.nextSibling);
+        // Insérer après le bouton APCAT s'il existe, sinon après diversBtn
+        let refNode = document.getElementById('gkr-import-apcat-btn') || diversBtn;
+        refNode.parentNode.insertBefore(btnTopAuto, refNode.nextSibling);
     }
 
     // --- Boucle d'injection dynamique ---
     setInterval(() => {
         let host = window.location.host;
         let href = window.location.href;
-        if (host.includes('carparts-cat.com') || host.includes('apcat.eu')) {
-            addApcatExportButton();
-        } else if ((host.includes('topautopieces.be') || host.includes('toppiecesauto.be')) && (href.includes('/cart') || document.querySelector('.main_cart') || document.querySelector('input[id^="cart_quantity_"]'))) {
+        if ((host.includes('topautopieces.be') || host.includes('toppiecesauto.be')) && (href.includes('/cart') || document.querySelector('.main_cart') || document.querySelector('input[id^="cart_quantity_"]'))) {
             addTopAutoPiecesExportButton();
         } else if (host.includes('gkr.be')) {
-            addGkrImportButtons();
+            addGkrImportButton();
         }
     }, 1000);
 
