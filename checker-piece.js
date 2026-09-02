@@ -1,4 +1,3 @@
-test
 // ==UserScript==
 // @name         GKR - Vérificateur de codes sur GKR Products
 // @namespace    http://tampermonkey.net/
