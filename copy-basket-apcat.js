@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         APCAT to GKR Cart Linker
 // @namespace    http://tampermonkey.net/
-// @version      4.0
+// @version      4.1
 // @description  Transfert automatique d'articles, références exactes (Code), désignations épurées "Marque - Nom de la pièce" et prix (HT) depuis APCAT vers GKR
 // @author       Norsiide
 // @match        https://apcat.eu/*
@@ -178,8 +178,8 @@
         let words = s.split(' ').filter(Boolean);
         let n = words.length;
 
-        // 1. Découpage en 2 moitiés identiques de mots
-        if (n >= 2 && n % 2 === 0) {
+        // 1. Découpage en 2 moitiés identiques de mots (ex: "VKMA 01113 VKMA 01113" -> "VKMA 01113")
+        if (n >= 4 && n % 2 === 0) {
             let half = n / 2;
             let firstHalf = words.slice(0, half).join(' ');
             let secondHalf = words.slice(half).join(' ');
@@ -188,11 +188,12 @@
             }
         }
 
-        // 2. Découpage textuel direct
+        // 2. Découpage textuel direct uniquement pour les longues chaînes dupliquées (>= 10 caractères)
         let len = s.length;
-        for (let i = 2; i <= Math.floor(len / 2); i++) {
-            let candidate = s.slice(0, i).trim();
-            let rest = s.slice(i).trim();
+        if (len >= 10 && len % 2 === 0) {
+            let half = len / 2;
+            let candidate = s.slice(0, half).trim();
+            let rest = s.slice(half).trim();
             if (candidate.toLowerCase() === rest.toLowerCase() || normalizeCode(candidate) === normalizeCode(rest)) {
                 return candidate;
             }
@@ -201,71 +202,24 @@
         return s;
     }
 
-    // Helper: Nettoyage et isolation stricte de la référence pièce sans aucun doublon
+    // Helper: Nettoyage et préservation intégrale de la référence pièce (tous les caractères conservés)
     function cleanReferenceCode(ref) {
         if (!ref) return "";
-        let clean = String(ref).replace(/[\u00a0\u202F]/g, ' ').trim();
+        let clean = String(ref).replace(/[\u00a0\u202F\r\n\t]+/g, ' ').trim();
 
-        // 1. Recoller les tirets et slashs séparés par des espaces (ex: "PL - 13 / 12V - PLA" => "PL-13/12V-PLA")
-        clean = clean.replace(/\s*([-\/])\s*/g, '$1');
-
-        // 2. Retirer parenthèses et crochets SEULEMENT s'ils ne contiennent pas la référence elle-même
-        if (!/\([A-Za-z0-9\/\-_.]+\)/.test(clean) || clean.includes(' ')) {
-            clean = clean.replace(/\s*\([^)]*\)\s*/g, ' ').trim();
-            clean = clean.replace(/\s*\[[^\]]*\]\s*/g, ' ').trim();
-        }
-
-        // 3. Retirer préfixes
+        // 1. Retirer uniquement les préfixes de type label (ex: "Réf: ", "Art: ", "Code: ")
         clean = clean.replace(/^(?:art(?:icle)?\.?|r[ée]f(?:[ée]rence)?\.?|code|n[o°]?\.?|num[ée]ro\s+d['’]article)\s*:?\s*/i, '');
 
-        // 4. Retirer devises / suffixes à la fin
-        clean = clean.replace(/\s+(?:EUR|€|\$|EU|OE|OEM|OEN|ORIGINAL|PI[ÈE]CE|ARTICLE)$/i, '');
-        clean = clean.replace(/^(?:OE|OEM|OEN)\s+/i, '');
+        // 2. Retirer les mentions de devises résiduelles en toute fin (ex: "EUR", "€")
+        clean = clean.replace(/\s+(?:EUR|€|\$)\s*$/i, '');
 
-        // 5. Nettoyage des ponctuations résiduelles aux extrémités
-        clean = clean.replace(/^["'();:,\-_/.\s]+|["'();:,\-_/.\s]+$/g, '').trim();
+        // 3. Retirer les guillemets ou apostrophes entourant la référence
+        clean = clean.replace(/^["'«»`]+|["'«»`]+$/g, '').trim();
 
-        // 6. Si le code contient une référence composite complète (ex: PL-13/12V-PLA, C30005/1), la garder ENTIÈRE
-        let compMatch = clean.match(/\b([A-Za-z0-9]+(?:[-\/][A-Za-z0-9]+)+)\b/);
-        if (compMatch && /\d/.test(compMatch[1]) && compMatch[1].length >= 3) {
-            return compMatch[1].toUpperCase();
-        }
+        // 4. Normaliser les espaces multiples consécutifs en un seul espace
+        clean = clean.replace(/\s{2,}/g, ' ');
 
-        // 5. Première passe de déduplication de phrases
-        clean = deduplicateRepeatedPhrase(clean);
-
-        // 6. Analyser les mots de la référence
-        let words = clean.split(' ').filter(Boolean);
-        if (words.length >= 2) {
-            let keepWords = [];
-            let hasSeenDigit = false;
-
-            for (let i = 0; i < words.length; i++) {
-                let w = words[i];
-                if (/\d/.test(w)) {
-                    hasSeenDigit = true;
-                    keepWords.push(w);
-                } else {
-                    if (!hasSeenDigit) {
-                        if (w.length <= 4 && !isDescriptiveWord(w)) {
-                            keepWords.push(w);
-                        }
-                    } else {
-                        if (/^[\/\-_.]+[A-Za-z0-9]*$/.test(w) || /^[A-Za-z0-9]+[\/\-_.]+[A-Za-z0-9]*$/.test(w)) {
-                            keepWords.push(w);
-                        } else {
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (keepWords.length > 0) {
-                clean = keepWords.join(' ');
-            }
-        }
-
-        // 7. Deuxième passe de déduplication
+        // 5. Déduplication si la référence est répétée deux fois à l'identique dans le DOM
         clean = deduplicateRepeatedPhrase(clean);
 
         return clean.trim();
@@ -326,11 +280,11 @@
         try {
             input.focus();
 
-            // Formatage avec POINT obligatoire pour GKR
+            // Formatage avec POINT obligatoire pour GKR si valeur numérique
             let stringVal = String(value);
             if (typeof value === 'number') {
                 stringVal = Number.isInteger(value) ? String(value) : value.toFixed(2);
-            } else if (stringVal.includes(',')) {
+            } else if (/^\s*-?\d+,\d+\s*$/.test(stringVal)) {
                 stringVal = stringVal.replace(',', '.');
             }
 
@@ -418,9 +372,16 @@
             let copyBtn = parent.querySelector('input.al_imgcopy, .al_imgcopy, [onclick*="copy" i]');
             if (copyBtn) {
                 let onclickStr = copyBtn.getAttribute('onclick') || '';
-                let m = onclickStr.match(/['"]([A-Za-z0-9\/\-_.\s]{3,35})['"]/);
-                if (m && !m[1].includes('http') && !m[1].includes('.aspx')) {
+                let m = onclickStr.match(/(?:copy[^(]*|clipboard[^(]*)\(\s*['"]([^'"]+)['"]/i) ||
+                        onclickStr.match(/['"]([^'"]+)['"]/);
+                if (m && !m[1].includes('http') && !m[1].includes('.aspx') && !m[1].includes('javascript:') && !m[1].includes('return ')) {
                     reference = cleanReferenceCode(m[1]);
+                }
+                if (!reference) {
+                    let attrVal = copyBtn.getAttribute('data-code') || copyBtn.getAttribute('data-article') || copyBtn.getAttribute('data-ref') || copyBtn.getAttribute('value') || copyBtn.getAttribute('title');
+                    if (attrVal && attrVal.length >= 2 && !attrVal.includes('.aspx') && !attrVal.toLowerCase().includes('copier')) {
+                        reference = cleanReferenceCode(attrVal);
+                    }
                 }
                 if (!reference) {
                     let prev = copyBtn.previousElementSibling || copyBtn.closest('div')?.previousElementSibling;
@@ -452,7 +413,7 @@
                     }
                 } else if (spans.length === 1 && spans[0].textContent.trim().length > 1) {
                     let txt = spans[0].textContent.trim();
-                    if (!reference && /\d/.test(txt) && txt.length <= 25) {
+                    if (!reference && /\d/.test(txt) && txt.length <= 60) {
                         reference = cleanReferenceCode(txt);
                     } else if (!description) {
                         description = cleanShortProductName(txt);
@@ -469,11 +430,9 @@
             if (!reference) {
                 for (let s of allSpans) {
                     let txt = s.textContent.trim();
-                    if (/\d/.test(txt) && txt.length >= 3 && txt.length <= 25 && !txt.includes('\n')) {
-                        if (!txt.includes('/') || txt.match(/^[A-Za-z0-9]+[\/\-_][A-Za-z0-9]+$/)) {
-                            reference = cleanReferenceCode(txt);
-                            break;
-                        }
+                    if (/\d/.test(txt) && txt.length >= 2 && txt.length <= 60 && !txt.includes('\n') && !/\b\d{2}\/\d{2}\/\d{4}\b/.test(txt)) {
+                        reference = cleanReferenceCode(txt);
+                        break;
                     }
                 }
             }
