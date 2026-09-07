@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         APCAT to Norsiide Products Importer
+// @name         APCAT Import -> gkr.norsiide.be
 // @namespace    http://tampermonkey.net/
 // @version      5.1
 // @description  Importation automatique 1-clic depuis la fiche article APCAT vers le modal Nouveau Produit (#modalProduct) de GKR Norsiide avec ciblage direct par IDs exacts (#product_name, #product_reference, #product_brand_search, #product_sale_price, #product_oem_reference, #product_barcode, #product_type_select, etc.)
@@ -936,8 +936,6 @@
             };
 
             box.querySelector('#norsiide-helper-fill-btn').onclick = async () => {
-                openProductModalIfNeeded();
-                await sleep(300);
                 let count = fillProductForm(data);
                 if (count > 0) {
                     showToast(`✅ ${count} champ(s) du modal rempli(s) avec succès !`, 'success');
@@ -994,32 +992,6 @@
             showFloatingImportHelper(payload);
 
             if (lastProcessedPayloadId === payload.id) {
-                const nameInp = document.getElementById('product_name');
-                if (nameInp) {
-                    if (nameInp.value) {
-                        let cleaned = stripBrandFromText(nameInp.value, payload.brand);
-                        if (cleaned && cleaned !== nameInp.value) {
-                            setNativeValue(nameInp, cleaned);
-                        }
-                    } else {
-                        fillProductForm(payload);
-                    }
-                }
-                const priceInp = document.getElementById('product_sale_price');
-                if (priceInp && payload.price > 0 && (!priceInp.value || priceInp.value === '0.00' || priceInp.value === '0')) {
-                    let p = typeof payload.price === 'number' ? payload.price : parseFloat(String(payload.price).replace(',', '.')) || 0;
-                    if (p > 0) {
-                        setNativeValue(priceInp, p.toFixed(2));
-                        if (typeof window.calcProductTtc === 'function') {
-                            try { window.calcProductTtc(); } catch (e) {}
-                        }
-                        const ttcInp = document.getElementById('product_sale_price_ttc');
-                        if (ttcInp && (!ttcInp.value || parseFloat(ttcInp.value) <= 0)) {
-                            ttcInp.value = (p * 1.21).toFixed(2);
-                            ttcInp.dispatchEvent(new Event('change', { bubbles: true }));
-                        }
-                    }
-                }
                 return;
             }
 
@@ -1027,24 +999,10 @@
             console.log('[Norsiide Linker] 📥 Traitement du produit :', payload);
 
             showToast(
-                `📥 Données APCAT reçues : [${payload.reference}]\nOuverture et remplissage de la fiche produit...`,
+                `📥 Données APCAT reçues : [${payload.reference}]\nOuvrez le modal manuellement puis cliquez sur Remplir.`,
                 'info',
                 4000
             );
-
-            openProductModalIfNeeded();
-
-            let attempts = 0;
-            const fillInterval = setInterval(() => {
-                attempts++;
-                let filled = fillProductForm(payload);
-                if (filled >= 3 || attempts >= 10) {
-                    clearInterval(fillInterval);
-                    if (filled > 0) {
-                        showToast(`✅ Fiche produit remplie pour [${payload.reference}] !`, 'success');
-                    }
-                }
-            }, 300);
         }
 
         processImportPayload();
@@ -1058,39 +1016,7 @@
             });
         }
 
-        const modalWatcher = new MutationObserver(() => {
-            let payload = GM_getValue('norsiide_import_payload', null);
-            if (!payload || !payload.reference || (Date.now() - payload.timestamp > 300000)) return;
 
-            const nameInp = document.getElementById('product_name');
-            if (nameInp) {
-                if (nameInp.value) {
-                    let cleaned = stripBrandFromText(nameInp.value, payload.brand);
-                    if (cleaned && cleaned !== nameInp.value) {
-                        setNativeValue(nameInp, cleaned);
-                    }
-                } else {
-                    fillProductForm(payload);
-                }
-            }
-
-            const priceInp = document.getElementById('product_sale_price');
-            if (priceInp && payload.price > 0 && (!priceInp.value || priceInp.value === '0.00' || priceInp.value === '0')) {
-                let p = typeof payload.price === 'number' ? payload.price : parseFloat(String(payload.price).replace(',', '.')) || 0;
-                if (p > 0) {
-                    setNativeValue(priceInp, p.toFixed(2));
-                    if (typeof window.calcProductTtc === 'function') {
-                        try { window.calcProductTtc(); } catch (e) {}
-                    }
-                    const ttcInp = document.getElementById('product_sale_price_ttc');
-                    if (ttcInp && (!ttcInp.value || parseFloat(ttcInp.value) <= 0)) {
-                        ttcInp.value = (p * 1.21).toFixed(2);
-                        ttcInp.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
-                }
-            }
-        });
-        modalWatcher.observe(document.body, { childList: true, subtree: true });
     }
 
 })();
