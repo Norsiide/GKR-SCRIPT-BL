@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         APCAT to GKR Cart Linker
+// @name         APCAT copy basket -> gkr.norsiide.be
 // @namespace    http://tampermonkey.net/
 // @version      4.1
 // @description  Transfert automatique d'articles, références exactes (Code), désignations épurées "Marque - Nom de la pièce" et prix (HT) depuis APCAT vers GKR
