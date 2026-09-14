@@ -1,12 +1,13 @@
 // ==UserScript==
-// @name         APCAT copy basket -> gkr.norsiide.be
+// @name         APCAT copy basket -> app.gkr.be et gkr.norsiide.be
 // @namespace    http://tampermonkey.net/
-// @version      4.1
+// @version      5.0
 // @description  Transfert automatique d'articles, références exactes (Code), désignations épurées "Marque - Nom de la pièce" et prix (HT) depuis APCAT vers GKR
 // @author       Norsiide
 // @match        https://apcat.eu/*
 // @match        https://*.carparts-cat.com/*
 // @match        https://app.gkr.be/*
+// @match        https://gkr.norsiide.be/*
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @run-at       document-end
@@ -291,7 +292,7 @@
             // 1. Sélectionner tout le texte
             try {
                 if (typeof input.select === 'function') input.select();
-            } catch (e) {}
+            } catch (e) { }
 
             // 2. Mise à jour React Tracker + Prototype
             const tracker = input._valueTracker;
@@ -373,7 +374,7 @@
             if (copyBtn) {
                 let onclickStr = copyBtn.getAttribute('onclick') || '';
                 let m = onclickStr.match(/(?:copy[^(]*|clipboard[^(]*)\(\s*['"]([^'"]+)['"]/i) ||
-                        onclickStr.match(/['"]([^'"]+)['"]/);
+                    onclickStr.match(/['"]([^'"]+)['"]/);
                 if (m && !m[1].includes('http') && !m[1].includes('.aspx') && !m[1].includes('javascript:') && !m[1].includes('return ')) {
                     reference = cleanReferenceCode(m[1]);
                 }
@@ -528,7 +529,7 @@
     //  COTE GKR (Importation)
     // ==========================================
     function getGkrArticleRows() {
-        return Array.from(document.querySelectorAll('tbody tr, tr')).filter(r => {
+        return Array.from(document.querySelectorAll('tbody tr, tr, .ligne-row')).filter(r => {
             let inps = r.querySelectorAll('input:not([type="checkbox"]):not([type="hidden"])');
             return inps.length >= 2;
         });
@@ -540,11 +541,11 @@
         let inputs = Array.from(targetRow.querySelectorAll('input:not([type="checkbox"]):not([type="hidden"])'));
         if (inputs.length === 0) return;
 
-        let codeInput = null;
-        let descInput = null;
-        let priceInput = null;
-        let qtyInput = null;
-        let montantInput = null;
+        let codeInput = targetRow.querySelector('input[name*="[reference]"], input[name*="[code]"]');
+        let descInput = targetRow.querySelector('input[name*="[description]"], input[name*="[designation]"]');
+        let priceInput = targetRow.querySelector('input[name*="[prix_unitaire_htva]"], input[name*="[prix_ht]"]');
+        let qtyInput = targetRow.querySelector('input[name*="[quantite]"], input[name*="[qte]"]');
+        let montantInput = targetRow.querySelector('input[name*="[montant]"], input[name*="[total]"]');
 
         // Détection par colonnes TH si présentes
         let table = targetRow.closest('table');
@@ -560,15 +561,15 @@
                 if (!inp) return;
 
                 if (txt === 'code' || ((txt.includes('code') || txt.includes('réf') || txt.includes('ref')) && !txt.includes('désignation'))) {
-                    codeInput = inp;
+                    if (!codeInput) codeInput = inp;
                 } else if (txt.includes('désignation') || txt.includes('designation') || txt.includes('description') || txt.includes('nom') || txt.includes('article')) {
-                    descInput = inp;
+                    if (!descInput) descInput = inp;
                 } else if (txt.includes('qte') || txt.includes('qté') || txt.includes('quantité') || txt.includes('qty')) {
-                    qtyInput = inp;
+                    if (!qtyInput) qtyInput = inp;
                 } else if (txt.includes('prix htva') || txt.includes('prix ht') || txt.includes('achat')) {
-                    priceInput = inp;
+                    if (!priceInput) priceInput = inp;
                 } else if (txt.includes('montant') || txt.includes('total tvac') || txt.includes('tvac')) {
-                    montantInput = inp;
+                    if (!montantInput) montantInput = inp;
                 }
             });
         }
@@ -651,9 +652,9 @@
 
     async function importItem(item) {
         let buttons = document.querySelectorAll('button');
-        let diversBtn = Array.from(buttons).find(b => b.textContent.includes('Produit divers'));
+        let diversBtn = Array.from(buttons).find(b => b.textContent.includes('Produit divers') || b.textContent.includes('Ligne vide'));
         if (!diversBtn) {
-            console.warn('[GKR Linker] Bouton "Produit divers" non trouvé !');
+            console.warn('[GKR Linker] Bouton "Produit divers" ou "Ligne vide" non trouvé !');
             return;
         }
 
@@ -699,7 +700,7 @@
 
     function addGkrImportButton() {
         let buttons = document.querySelectorAll('button');
-        let diversBtn = Array.from(buttons).find(b => b.textContent.includes('Produit divers'));
+        let diversBtn = Array.from(buttons).find(b => b.textContent.includes('Produit divers') || b.textContent.includes('Ligne vide'));
         if (!diversBtn) return;
         if (document.getElementById('gkr-import-apcat-btn')) return;
 
@@ -739,7 +740,7 @@
         let host = window.location.host;
         if (host.includes('carparts-cat.com') || host.includes('apcat.eu')) {
             addApcatExportButton();
-        } else if (host.includes('gkr.be')) {
+        } else if (host.includes('gkr.be') || host.includes('norsiide.be')) {
             addGkrImportButton();
         }
     }, 1000);
