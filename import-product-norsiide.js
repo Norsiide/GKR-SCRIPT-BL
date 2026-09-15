@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         APCAT Import -> gkr.norsiide.be
+// @name         APCAT Import to stock -> gkr.norsiide.be
 // @namespace    http://tampermonkey.net/
 // @version      5.1
 // @description  Importation automatique 1-clic depuis la fiche article APCAT vers le modal Nouveau Produit (#modalProduct) de GKR Norsiide avec ciblage direct par IDs exacts (#product_name, #product_reference, #product_brand_search, #product_sale_price, #product_oem_reference, #product_barcode, #product_type_select, etc.)
