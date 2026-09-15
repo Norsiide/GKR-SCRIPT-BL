@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         TopAutoPieces (INTERCAR) copy basket -> gkr.norsiide.be
+// @name         TopAutoPieces copy basket -> app.gkr.be
 // @namespace    http://tampermonkey.net/
 // @version      4.2
 // @description  Transfert automatique d'articles, références exactes (Code), désignations épurées "Marque - Nom de la pièce" et prix (HTVAC) depuis TopAutoPieces vers GKR
