@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         Checker piece -> gkr.norsiide.be
+// @name         recherche de piece de app.gkr.be à gkr.norsiide.be
 // @namespace    http://tampermonkey.net/
 // @version      3.8
 // @description  Lit les codes sur app.gkr.be, vérifie sur gkr.norsiide.be/products avec détection temps réel infaillible de l'onglet ouvert (gestion anti-veille Chrome) et statut de connexion
@@ -32,78 +32,17 @@
     // =========================================================================
     if (window.location.host.includes('gkr.norsiide.be')) {
 
-        // Vérification de l'onglet app.gkr.be (avec gestion anti-veille Chrome)
-        function isAppGkrTabOpen() {
-            let isOpened = GM_getValue('app_gkr_tab_opened', false);
-            let lastActiveTs = GM_getValue('app_gkr_active_ts', 0);
-            // L'onglet est ouvert si le flag est actif et que le dernier signal date de moins de 5 minutes
-            return isOpened && (Date.now() - lastActiveTs < 300000);
-        }
-
-        // Vérification du compte connecté
-        function isAppGkrLoggedIn() {
-            let auth = GM_getValue('gkr_user_auth_status', null);
-            if (auth && auth.loggedIn && (Date.now() - auth.timestamp < 3600000 * 12)) {
-                return true;
-            }
-            return false;
-        }
-
-        // Mise à jour de l'affichage du badge de statut
-        function updateAppGkrAuthBadge() {
+        // Maintien en vie de l'état de l'onglet pour app.gkr.be
+        function updateNorsiideTabState() {
             GM_setValue('norsiide_tab_opened', true);
             GM_setValue('norsiide_tab_active_ts', Date.now());
-
-            let badge = document.getElementById('norsiide-gkr-sync-badge');
-            if (!badge) {
-                badge = document.createElement('a');
-                badge.id = 'norsiide-gkr-sync-badge';
-                badge.target = '_blank';
-                badge.style.cssText = 'position: fixed; bottom: 54px; right: 10px; z-index: 99999; padding: 10px 16px; border-radius: 20px; font-size: 14px; font-weight: bold; box-shadow: rgba(0, 0, 0, 0.25) 0px 2px 8px; font-family: sans-serif; text-decoration: none; cursor: pointer; opacity: 0.95; transition: transform 0.2s, background 0.3s;';
-                badge.onmouseover = () => badge.style.transform = 'scale(1.03)';
-                badge.onmouseout = () => badge.style.transform = 'scale(1)';
-                document.body.appendChild(badge);
-            }
-
-            let tabOpen = isAppGkrTabOpen();
-            let loggedIn = isAppGkrLoggedIn();
-
-            if (loggedIn && tabOpen) {
-                // 🟢 CAS 1 : Compte connecté ET Onglet ouvert
-                badge.innerHTML = '🟢 Connecté à APP.GKR.BE (Onglet actif)';
-                badge.style.background = 'rgb(40, 167, 69)';
-                badge.style.color = 'white';
-                badge.href = 'https://app.gkr.be/new-dashboard/new-order';
-                badge.title = 'Votre compte est connecté et l\'onglet app.gkr.be est ouvert.';
-            } else if (loggedIn && !tabOpen) {
-                // 🟡 CAS 2 : Compte connecté MAIS Onglet fermé
-                badge.innerHTML = '🟡 APP.GKR.BE (Onglet fermé - Ouvrir ↗)';
-                badge.style.background = 'rgb(253, 126, 20)';
-                badge.style.color = 'white';
-                badge.href = 'https://app.gkr.be/new-dashboard/new-order';
-                badge.title = 'Votre compte est connecté mais l\'onglet app.gkr.be est fermé. Cliquez pour l\'ouvrir.';
-            } else {
-                // 🔴 CAS 3 : Compte déconnecté
-                badge.innerHTML = '🔴 Compte déconnecté (Se connecter ↗)';
-                badge.style.background = 'rgb(220, 53, 69)';
-                badge.style.color = 'white';
-                badge.href = APP_GKR_LOGIN_URL;
-                badge.title = 'Votre compte app.gkr.be est déconnecté. Cliquez pour vous identifier.';
-            }
         }
 
-        updateAppGkrAuthBadge();
-        setInterval(updateAppGkrAuthBadge, 1000);
+        updateNorsiideTabState();
+        setInterval(updateNorsiideTabState, 1000);
 
-        // Écouteur en temps réel des changements d'état
-        if (typeof GM_addValueChangeListener === 'function') {
-            GM_addValueChangeListener('app_gkr_tab_opened', updateAppGkrAuthBadge);
-            GM_addValueChangeListener('app_gkr_active_ts', updateAppGkrAuthBadge);
-            GM_addValueChangeListener('gkr_user_auth_status', updateAppGkrAuthBadge);
-        }
-
-        window.addEventListener('focus', updateAppGkrAuthBadge);
-        window.addEventListener('click', updateAppGkrAuthBadge);
+        window.addEventListener('focus', updateNorsiideTabState);
+        window.addEventListener('click', updateNorsiideTabState);
 
         window.addEventListener('beforeunload', () => {
             GM_setValue('norsiide_tab_active_ts', Date.now() - 3600000);
@@ -230,6 +169,7 @@
 
             let codeInput = null;
             let descInput = null;
+            let oemInput = null;
 
             // Détection par colonnes TH <-> TD
             let cells = Array.from(row.querySelectorAll('td'));
@@ -238,7 +178,9 @@
                 let input = td.querySelector('input');
                 if (!input) return;
 
-                if (headerText.includes('code') || headerText.includes('réf') || headerText.includes('ref') || headerText.includes('article') || headerText.includes('numéro') || headerText.includes('sku')) {
+                if (headerText.includes('oem')) {
+                    oemInput = input;
+                } else if (headerText.includes('code') || headerText.includes('réf') || headerText.includes('ref') || headerText.includes('article') || headerText.includes('numéro') || headerText.includes('sku')) {
                     codeInput = input;
                 } else if (headerText.includes('désignation') || headerText.includes('designation') || headerText.includes('description') || headerText.includes('nom')) {
                     descInput = input;
@@ -246,13 +188,15 @@
             });
 
             // Détection par placeholders / attributs
-            if (!codeInput) {
+            if (!codeInput || !oemInput) {
                 inputs.forEach(inp => {
                     let ph = (inp.placeholder || '').toLowerCase();
                     let aria = (inp.getAttribute('aria-label') || '').toLowerCase();
                     let name = (inp.name || '').toLowerCase();
                     let label = ph + ' ' + aria + ' ' + name;
-                    if (!codeInput && (label.includes('code') || label.includes('réf') || label.includes('ref'))) {
+                    if (!oemInput && label.includes('oem')) {
+                        oemInput = inp;
+                    } else if (!codeInput && (label.includes('code') || label.includes('réf') || label.includes('ref'))) {
                         codeInput = inp;
                     } else if (!descInput && (label.includes('désignation') || label.includes('designation') || label.includes('description'))) {
                         descInput = inp;
@@ -269,9 +213,46 @@
 
             if (codeInput) {
                 let val = codeInput.value.trim();
+                let oemVal = oemInput ? oemInput.value.trim() : '';
+
+                // NOUVEAU : Récupération globale des OEM sur la page (peu importe où est le badge)
+                if (!oemVal && val) {
+                    let allModals = document.querySelectorAll('[onclick*="openViewModal"]');
+                    for (let m of allModals) {
+                        let onclickStr = m.getAttribute('onclick') || '';
+
+                        // Vérifier si ce modal correspond à NOTRE référence (val)
+                        let isMatch = false;
+                        let refMatch = onclickStr.match(/"reference"\s*:\s*"([^"]+)"/);
+                        if (!refMatch) refMatch = onclickStr.match(/&quot;reference&quot;\s*:\s*&quot;([^&]+)&quot;/);
+
+                        if (refMatch && refMatch[1] && normalizeCode(refMatch[1]) === normalizeCode(val)) {
+                            isMatch = true;
+                        }
+
+                        if (isMatch) {
+                            let oemMatch = onclickStr.match(/"oem_reference"\s*:\s*"([^"]+)"/);
+                            if (!oemMatch) oemMatch = onclickStr.match(/&quot;oem_reference&quot;\s*:\s*&quot;([^&]+)&quot;/);
+
+                            if (oemMatch && oemMatch[1] && oemMatch[1] !== "null") {
+                                oemVal = oemMatch[1].replace(/\\\//g, '/');
+                                break;
+                            } else {
+                                let arrMatch = onclickStr.match(/"oem_references_array"\s*:\s*\[\s*"([^"]+)"/);
+                                if (!arrMatch) arrMatch = onclickStr.match(/&quot;oem_references_array&quot;\s*:\s*\[\s*&quot;([^&]+)&quot;/);
+                                if (arrMatch && arrMatch[1]) {
+                                    oemVal = arrMatch[1].replace(/\\\//g, '/');
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
                 if (val && val !== 'Code' && val !== '0') {
                     items.push({
                         reference: val,
+                        oemReference: oemVal,
                         description: descInput ? descInput.value.trim() : '',
                         rowElement: row,
                         inputElement: codeInput,
@@ -287,7 +268,7 @@
     // =========================================================================
     //  2. REQUÊTE SUR https://gkr.norsiide.be/products & DÉTECTION CONNEXION
     // =========================================================================
-    function checkCodeOnGkrNorsiide(ref) {
+    function checkCodeOnGkrNorsiide(ref, originalRef = null) {
         return new Promise((resolve) => {
             const cleanRef = ref.trim();
             const searchUrl = `${GKR_PRODUCTS_URL}?search=${encodeURIComponent(cleanRef)}&query=${encodeURIComponent(cleanRef)}&q=${encodeURIComponent(cleanRef)}`;
@@ -323,12 +304,13 @@
                         let found = false;
                         let productUrl = null;
                         const normTarget = normalizeCode(cleanRef);
+                        const normOriginal = originalRef ? normalizeCode(originalRef) : null;
 
                         // 1. Recherche dans les lignes ou cartes de gkr.norsiide.be
                         let rows = Array.from(doc.querySelectorAll('table tbody tr, tr, .product-row, .item-row, .card, [class*="product"]'));
                         for (let row of rows) {
                             let normText = normalizeCode(row.textContent);
-                            if (normText.includes(normTarget)) {
+                            if (normText.includes(normTarget) || (normOriginal && normText.includes(normOriginal))) {
                                 found = true;
                                 let link = row.querySelector('a[href*="product"], a[href*="article"], a');
                                 if (link) {
@@ -344,11 +326,14 @@
                         // 2. Recherche globale si présent dans la page
                         if (!found && doc.body) {
                             let bodyText = normalizeCode(doc.body.textContent);
-                            if (bodyText.includes(normTarget) && !bodyText.includes('aucunrésultat') && !bodyText.includes('aucunproduit') && !bodyText.includes('notfound') && !bodyText.includes('0produit')) {
+                            let hasNoResult = bodyText.includes('aucunrésultat') || bodyText.includes('aucunproduit') || bodyText.includes('notfound') || bodyText.includes('0produit');
+
+                            if (!hasNoResult && (bodyText.includes(normTarget) || (normOriginal && bodyText.includes(normOriginal)))) {
                                 found = true;
                                 let allLinks = Array.from(doc.querySelectorAll('a[href*="product"]'));
                                 for (let l of allLinks) {
-                                    if (normalizeCode(l.textContent).includes(normTarget)) {
+                                    let lText = normalizeCode(l.textContent);
+                                    if (lText.includes(normTarget) || (normOriginal && lText.includes(normOriginal))) {
                                         let hrefAttr = l.getAttribute('href') || l.href;
                                         productUrl = hrefAttr.startsWith('http') ? hrefAttr : ('https://gkr.norsiide.be' + (hrefAttr.startsWith('/') ? '' : '/') + hrefAttr);
                                         break;
@@ -506,13 +491,26 @@
 
             let checkRes = await checkCodeOnGkrNorsiide(it.reference);
 
+            // Si pas trouvé et oem présent, on tente l'oem
+            if (!checkRes.found && !checkRes.authRequired && it.oemReference) {
+                let oemRes = await checkCodeOnGkrNorsiide(it.oemReference, it.reference);
+                if (oemRes.found || oemRes.authRequired) {
+                    checkRes = oemRes;
+                }
+            }
+
             if (checkRes.authRequired) {
                 authIssueDetected = true;
             } else if (checkRes.found) {
                 foundCount++;
             }
 
-            setRowStatusBadge(it.rowElement, it.inputElement, checkRes.found, checkRes.productUrl, it.reference, checkRes.authRequired);
+            let displayRef = checkRes.found && checkRes.reference !== it.reference ? it.oemReference : it.reference;
+            if (!checkRes.found && it.oemReference) {
+                displayRef = `${it.reference} (OEM: ${it.oemReference})`;
+            }
+
+            setRowStatusBadge(it.rowElement, it.inputElement, checkRes.found, checkRes.productUrl, displayRef, checkRes.authRequired);
             await sleep(200);
         }
 
