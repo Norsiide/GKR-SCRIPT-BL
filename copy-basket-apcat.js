@@ -2,7 +2,7 @@
 // @name         APCAT copy basket -> app.gkr.be et gkr.norsiide.be
 // @namespace    http://tampermonkey.net/
 // @version      5.0
-// @description  Transfert automatique d'articles, références exactes (Code), désignations épurées "Marque - Nom de la pièce" et prix (HT) depuis APCAT vers GKR
+// @description  Transfert automatique d'articles, références exactes (Code), désignations "Marque - Nom de la pièce" et prix (HT) depuis APCAT vers app.gkr.be et gkr.norsiide.be
 // @author       Norsiide
 // @match        https://apcat.eu/*
 // @match        https://*.carparts-cat.com/*
