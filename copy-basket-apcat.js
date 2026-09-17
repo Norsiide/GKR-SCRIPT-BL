@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         APCAT copy basket -> app.gkr.be et gkr.norsiide.be
+// @name         APCAT copy basket -> app.gkr.be et gkr.nsd-services.be
 // @namespace    http://tampermonkey.net/
 // @version      5.0
 // @description  Transfert automatique d'articles, références exactes (Code), désignations épurées "Marque - Nom de la pièce" et prix (HT) depuis APCAT vers GKR
@@ -7,7 +7,7 @@
 // @match        https://apcat.eu/*
 // @match        https://*.carparts-cat.com/*
 // @match        https://app.gkr.be/*
-// @match        https://gkr.norsiide.be/*
+// @match        https://gkr.nsd-services.be/*
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @run-at       document-end
@@ -740,7 +740,7 @@
         let host = window.location.host;
         if (host.includes('carparts-cat.com') || host.includes('apcat.eu')) {
             addApcatExportButton();
-        } else if (host.includes('gkr.be') || host.includes('norsiide.be')) {
+        } else if (host.includes('gkr.be') || host.includes('nsd-services.be')) {
             addGkrImportButton();
         }
     }, 1000);
