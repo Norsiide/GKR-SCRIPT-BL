@@ -1,14 +1,14 @@
 // ==UserScript==
-// @name         APCAT Import to stock -> gkr.norsiide.be
+// @name         APCAT Import to stock -> gkr.nsd-services.be
 // @namespace    http://tampermonkey.net/
 // @version      5.1
 // @description  Importation automatique 1-clic depuis la fiche article APCAT vers le modal Nouveau Produit (#modalProduct) de GKR Norsiide avec ciblage direct par IDs exacts (#product_name, #product_reference, #product_brand_search, #product_sale_price, #product_oem_reference, #product_barcode, #product_type_select, etc.)
 // @author       Norsiide
 // @match        https://apcat.eu/*
 // @match        https://*.carparts-cat.com/*
-// @match        https://gkr.norsiide.be/*
-// @match        https://*.norsiide.be/*
-// @match        https://norsiide.be/*
+// @match        https://gkr.nsd-services.be/*
+// @match        https://*.nsd-services.be/*
+// @match        https://nsd-services.be/*
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_addValueChangeListener
@@ -18,7 +18,7 @@
 (function () {
     'use strict';
 
-    const NORSIIDE_PRODUCTS_URL = 'https://gkr.norsiide.be/products';
+    const NORSIIDE_PRODUCTS_URL = 'https://gkr.nsd-services.be/products';
     const sleep = ms => new Promise(res => setTimeout(res, ms));
 
     // =========================================================================
@@ -531,7 +531,7 @@
             const priceStr = data.price > 0 ? `${data.price.toFixed(2)} € HT` : '0.00 € HT';
 
             showToast(
-                `🚀 Article envoyé vers Norsiide !\n\n• Code (SKU) : ${data.reference}\n• Désignation : ${cleanDesc}\n• Marque : ${data.brand || 'Non spécifiée'}\n• Prix d'achat : ${priceStr}\n\n👉 Redirection vers gkr.norsiide.be/products...`,
+                `🚀 Article envoyé vers Norsiide !\n\n• Code (SKU) : ${data.reference}\n• Désignation : ${cleanDesc}\n• Marque : ${data.brand || 'Non spécifiée'}\n• Prix d'achat : ${priceStr}\n\n👉 Redirection vers gkr.nsd-services.be/products...`,
                 'success',
                 6000
             );
@@ -648,9 +648,9 @@
     }
 
     // =========================================================================
-    //  PARTIE 2 : CÔTÉ NORSIIDE (https://gkr.norsiide.be/*)
+    //  PARTIE 2 : CÔTÉ NORSIIDE (https://gkr.nsd-services.be/*)
     // =========================================================================
-    const isNorsiide = window.location.host.includes('gkr.norsiide.be') || window.location.host.includes('norsiide.be');
+    const isNorsiide = window.location.host.includes('gkr.nsd-services.be') || window.location.host.includes('nsd-services.be');
 
     if (isNorsiide) {
         console.log('[APCAT -> Norsiide] 🚀 Script v4.5 actif sur GKR Norsiide');
