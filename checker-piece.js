@@ -1,20 +1,20 @@
 // ==UserScript==
-// @name         recherche de piece de app.gkr.be à gkr.norsiide.be
+// @name         recherche de piece de app.gkr.be à gkr.nsd-services.be
 // @namespace    http://tampermonkey.net/
 // @version      3.8
-// @description  Lit les codes sur app.gkr.be, vérifie sur gkr.norsiide.be/products avec détection temps réel infaillible de l'onglet ouvert (gestion anti-veille Chrome) et statut de connexion
+// @description  Lit les codes sur app.gkr.be, vérifie sur gkr.nsd-services.be/products avec détection temps réel infaillible de l'onglet ouvert (gestion anti-veille Chrome) et statut de connexion
 // @author       norsiide
 // @match        *://app.gkr.be/*
 // @match        *://*.gkr.be/*
-// @match        *://gkr.norsiide.be/*
-// @match        *://*.norsiide.be/*
-// @match        *://norsiide.be/*
+// @match        *://gkr.nsd-services.be/*
+// @match        *://*.nsd-services.be/*
+// @match        *://nsd-services.be/*
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_addValueChangeListener
 // @grant        GM_xmlhttpRequest
-// @connect      gkr.norsiide.be
-// @connect      norsiide.be
+// @connect      gkr.nsd-services.be
+// @connect      nsd-services.be
 // @connect      app.gkr.be
 // @connect      gkr.be
 // @run-at       document-end
@@ -23,14 +23,14 @@
 (function () {
     'use strict';
 
-    const GKR_PRODUCTS_URL = 'https://gkr.norsiide.be/products';
-    const GKR_LOGIN_URL = 'https://gkr.norsiide.be/login';
+    const GKR_PRODUCTS_URL = 'https://gkr.nsd-services.be/products';
+    const GKR_LOGIN_URL = 'https://gkr.nsd-services.be/login';
     const APP_GKR_LOGIN_URL = 'https://app.gkr.be/auth/supabase/sign-in';
 
     // =========================================================================
-    //  0. GESTION DU SITE NORSIIDE (gkr.norsiide.be)
+    //  0. GESTION DU SITE NORSIIDE (gkr.nsd-services.be)
     // =========================================================================
-    if (window.location.host.includes('gkr.norsiide.be')) {
+    if (window.location.host.includes('gkr.nsd-services.be')) {
 
         // Maintien en vie de l'état de l'onglet pour app.gkr.be
         function updateNorsiideTabState() {
@@ -134,10 +134,10 @@
         });
 
         if (isNorsiideOpen) {
-            console.log('[GKR Linker] Onglet ( gkr.norsiide.be ) actif. Navigation unique envoyée.');
+            console.log('[GKR Linker] Onglet ( gkr.nsd-services.be ) actif. Navigation unique envoyée.');
             if (badgeElement) {
                 let originalHtml = badgeElement.innerHTML;
-                badgeElement.innerHTML = '⚡ Chargé sur ( gkr.norsiide.be ) !';
+                badgeElement.innerHTML = '⚡ Chargé sur ( gkr.nsd-services.be ) !';
                 badgeElement.style.backgroundColor = '#cce5ff';
                 badgeElement.style.color = '#004085';
                 setTimeout(() => {
@@ -147,7 +147,7 @@
                 }, 2000);
             }
         } else {
-            console.log('[GKR Linker] Aucun onglet ( gkr.norsiide.be ) actif. Ouverture d\'une nouvelle page...');
+            console.log('[GKR Linker] Aucun onglet ( gkr.nsd-services.be ) actif. Ouverture d\'une nouvelle page...');
             window.open(targetUrl, '_blank');
         }
     }
@@ -266,7 +266,7 @@
     }
 
     // =========================================================================
-    //  2. REQUÊTE SUR https://gkr.norsiide.be/products & DÉTECTION CONNEXION
+    //  2. REQUÊTE SUR https://gkr.nsd-services.be/products & DÉTECTION CONNEXION
     // =========================================================================
     function checkCodeOnGkrNorsiide(ref, originalRef = null) {
         return new Promise((resolve) => {
@@ -306,7 +306,7 @@
                         const normTarget = normalizeCode(cleanRef);
                         const normOriginal = originalRef ? normalizeCode(originalRef) : null;
 
-                        // 1. Recherche dans les lignes ou cartes de gkr.norsiide.be
+                        // 1. Recherche dans les lignes ou cartes de gkr.nsd-services.be
                         let rows = Array.from(doc.querySelectorAll('table tbody tr, tr, .product-row, .item-row, .card, [class*="product"]'));
                         for (let row of rows) {
                             let normText = normalizeCode(row.textContent);
@@ -316,7 +316,7 @@
                                 if (link) {
                                     let hrefAttr = link.getAttribute('href') || link.href;
                                     if (hrefAttr) {
-                                        productUrl = hrefAttr.startsWith('http') ? hrefAttr : ('https://gkr.norsiide.be' + (hrefAttr.startsWith('/') ? '' : '/') + hrefAttr);
+                                        productUrl = hrefAttr.startsWith('http') ? hrefAttr : ('https://gkr.nsd-services.be' + (hrefAttr.startsWith('/') ? '' : '/') + hrefAttr);
                                     }
                                 }
                                 break;
@@ -335,7 +335,7 @@
                                     let lText = normalizeCode(l.textContent);
                                     if (lText.includes(normTarget) || (normOriginal && lText.includes(normOriginal))) {
                                         let hrefAttr = l.getAttribute('href') || l.href;
-                                        productUrl = hrefAttr.startsWith('http') ? hrefAttr : ('https://gkr.norsiide.be' + (hrefAttr.startsWith('/') ? '' : '/') + hrefAttr);
+                                        productUrl = hrefAttr.startsWith('http') ? hrefAttr : ('https://gkr.nsd-services.be' + (hrefAttr.startsWith('/') ? '' : '/') + hrefAttr);
                                         break;
                                     }
                                 }
@@ -415,21 +415,21 @@
             badge.style.color = '#856404';
             badge.style.border = '1px solid #ffeeba';
             badge.innerHTML = '🔒 Déconnecté de Norsiide (Se connecter ↗)';
-            badge.title = `Votre session sur gkr.norsiide.be a expiré. Cliquez pour vous connecter.`;
+            badge.title = `Votre session sur gkr.nsd-services.be a expiré. Cliquez pour vous connecter.`;
             rowElement.style.backgroundColor = 'rgba(255, 193, 7, 0.08)';
         } else if (found) {
             badge.style.backgroundColor = '#d4edda';
             badge.style.color = '#155724';
             badge.style.border = '1px solid #c3e6cb';
             badge.innerHTML = '✅ En stock (Ouvrir ↗)';
-            badge.title = `Cliquer pour charger ${ref} sur votre onglet ( gkr.norsiide.be )`;
+            badge.title = `Cliquer pour charger ${ref} sur votre onglet ( gkr.nsd-services.be )`;
             rowElement.style.backgroundColor = 'rgba(40, 167, 69, 0.05)';
         } else {
             badge.style.backgroundColor = '#f8d7da';
             badge.style.color = '#721c24';
             badge.style.border = '1px solid #f5c6cb';
             badge.innerHTML = '❌ Non trouvé (Chercher ↗)';
-            badge.title = `Cliquer pour chercher ${ref} sur votre onglet ( gkr.norsiide.be )`;
+            badge.title = `Cliquer pour chercher ${ref} sur votre onglet ( gkr.nsd-services.be )`;
             rowElement.style.backgroundColor = 'rgba(220, 53, 69, 0.05)';
         }
 
@@ -451,7 +451,7 @@
             let checkBtn = document.createElement('button');
             checkBtn.id = 'gkr-check-norsiide-btn';
             checkBtn.type = 'button';
-            checkBtn.textContent = '🔎 Checker sur ( gkr.norsiide.be )';
+            checkBtn.textContent = '🔎 Checker sur ( gkr.nsd-services.be )';
             checkBtn.style.cssText = 'margin-left: 8px; padding: 10px 16px; background-color: #6f42c1; color: white; border: none; border-radius: 6px; cursor: pointer; font-family: Roboto, Helvetica, Arial, sans-serif; font-weight: bold; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.15); transition: background 0.3s;';
             checkBtn.onmouseover = () => checkBtn.style.backgroundColor = '#59359a';
             checkBtn.onmouseout = () => checkBtn.style.backgroundColor = '#6f42c1';
@@ -522,7 +522,7 @@
                 btn.textContent = `✅ Vérifié (${foundCount}/${items.length} trouvés)`;
             }
             setTimeout(() => {
-                btn.textContent = '🔎 Checker sur ( gkr.norsiide.be )';
+                btn.textContent = '🔎 Checker sur ( gkr.nsd-services.be )';
             }, 5000);
         }
     }
